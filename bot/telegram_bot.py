@@ -32,8 +32,23 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("today", today))
 
-    print("=== STARTING POLLING ===")
-    app.run_polling()
+  from telegram.ext import Application, CommandHandler
+import os
 
-if __name__ == "__main__":
-    main()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+
+async def start(update, context):
+    await update.message.reply_text("🏃 Marathon Coach aktiv")
+
+
+async def start_bot():
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+
+    print("STARTING TELEGRAM BOT")
+
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()  
