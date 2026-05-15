@@ -20,3 +20,11 @@ def today():
         "state": state,
         "plan": plan
     }
+
+import threading
+from bot.telegram_bot import main as bot_main
+
+def start_bot():
+    bot_main()
+
+threading.Thread(target=start_bot).start()
