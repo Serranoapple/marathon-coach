@@ -21,11 +21,19 @@ def today():
         "plan": plan
     }
 
-import threading
-from bot.telegram_bot import main as bot_main
+from fastapi import FastAPI
+import asyncio
 
-def start_bot():
-    print("STARTING TELEGRAM THREAD")
-    bot_main()
+from bot.telegram_bot import start_bot
 
-threading.Thread(target=start_bot, daemon=True).start()
+app = FastAPI()
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(start_bot())
+
+
+@app.get("/")
+def root():
+    return {"status": "running"}
