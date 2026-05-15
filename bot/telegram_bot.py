@@ -32,6 +32,7 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("today", today))
 
+    print("=== STARTING POLLING ===")
     app.run_polling()
 
 if __name__ == "__main__":
