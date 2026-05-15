@@ -10,6 +10,9 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+print("=== TELEGRAM BOT FILE LOADED ===")
+print("TOKEN FOUND:", TOKEN is not None)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏃 Marathon Coach aktiv")
 
