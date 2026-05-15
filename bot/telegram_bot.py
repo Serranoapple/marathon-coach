@@ -1,4 +1,5 @@
 import os
+import asyncio
 
 print("TELEGRAM_BOT MODULE IMPORTED")
 
@@ -44,11 +45,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_bot():
     print("START_BOT FUNCTION RUNNING")
 
+    print("BUILDING APPLICATION")
+
     application = (
         Application.builder()
         .token(TOKEN)
         .build()
     )
+
+    print("APPLICATION BUILT")
 
     application.add_handler(
         CommandHandler("start", start)
@@ -66,16 +71,18 @@ async def start_bot():
         CommandHandler("help", help_command)
     )
 
-    print("=== STARTING TELEGRAM BOT ===")
+    print("ENTERING ASYNC CONTEXT")
 
-    await application.initialize()
+    async with application:
+        print("APPLICATION INITIALIZED")
 
-    print("APPLICATION INITIALIZED")
+        await application.start()
 
-    await application.start()
+        print("APPLICATION STARTED")
 
-    print("APPLICATION STARTED")
+        await application.updater.start_polling()
 
-    await application.updater.start_polling()
+        print("POLLING STARTED")
 
-    print("POLLING STARTED")
+        while True:
+            await asyncio.sleep(3600)
