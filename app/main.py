@@ -1,20 +1,23 @@
 from fastapi import FastAPI
-import asyncio
+import threading
 
 print("MAIN.PY LOADED")
 
-from bot.telegram_bot import start_bot
+from bot.telegram_bot import start_bot_sync
 
 app = FastAPI()
 
 
 @app.on_event("startup")
-async def startup_event():
+def startup_event():
     print("FASTAPI STARTUP EVENT RUNNING")
 
-    asyncio.create_task(start_bot())
+    # Start Telegram bot i separat thread (blocking-safe)
+    bot_thread = threading.Thread(target=start_bot_sync)
+    bot_thread.daemon = True
+    bot_thread.start()
 
-    print("BOT TASK CREATED")
+    print("BOT THREAD STARTED")
 
 
 @app.get("/")
