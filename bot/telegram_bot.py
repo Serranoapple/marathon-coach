@@ -1,6 +1,6 @@
-print("TELEGRAM_BOT MODULE IMPORTED")
-
 import os
+
+print("TELEGRAM_BOT MODULE IMPORTED")
 
 from telegram import Update
 from telegram.ext import (
@@ -10,6 +10,8 @@ from telegram.ext import (
 )
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+print("TOKEN FOUND:", TOKEN is not None)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -24,8 +26,24 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "System status:\nCTL: 48\nATL: 55\nTSB: -7"
+    )
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "/start\n"
+        "/today\n"
+        "/status\n"
+        "/help"
+    )
+
+
 async def start_bot():
-  print("START_BOT FUNCTION RUNNING")  
+    print("START_BOT FUNCTION RUNNING")
+
     application = (
         Application.builder()
         .token(TOKEN)
@@ -40,8 +58,24 @@ async def start_bot():
         CommandHandler("today", today)
     )
 
+    application.add_handler(
+        CommandHandler("status", status)
+    )
+
+    application.add_handler(
+        CommandHandler("help", help_command)
+    )
+
     print("=== STARTING TELEGRAM BOT ===")
 
     await application.initialize()
+
+    print("APPLICATION INITIALIZED")
+
     await application.start()
+
+    print("APPLICATION STARTED")
+
     await application.updater.start_polling()
+
+    print("POLLING STARTED")
