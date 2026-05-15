@@ -1,27 +1,4 @@
 from fastapi import FastAPI
-from services.fitness_engine import get_current_state
-from services.ai_coach import get_daily_plan
-
-app = FastAPI()
-
-@app.get("/")
-def root():
-    return {"status": "Marathon Coach running"}
-
-@app.get("/status")
-def status():
-    return get_current_state()
-
-@app.get("/today")
-def today():
-    state = get_current_state()
-    plan = get_daily_plan(state)
-    return {
-        "state": state,
-        "plan": plan
-    }
-
-from fastapi import FastAPI
 import asyncio
 
 from bot.telegram_bot import start_bot
@@ -37,3 +14,12 @@ async def startup_event():
 @app.get("/")
 def root():
     return {"status": "running"}
+
+
+@app.get("/status")
+def status():
+    return {
+        "ctl": 48,
+        "atl": 55,
+        "tsb": -7
+    }
