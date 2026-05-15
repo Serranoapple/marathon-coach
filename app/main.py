@@ -63,21 +63,22 @@ def root():
     return {"status": "running"}
 
 
-@app.post("/strava-webhook")
+# STRAVA VERIFICATION (GET + POST SAFE)
+@app.api_route("/strava-webhook", methods=["GET", "POST"])
 async def strava_webhook(request: Request):
 
-    # raw JSON fra Strava
+    # GET TEST (Strava validation / browser test)
+    if request.method == "GET":
+        return {"status": "ok"}
+
+    # POST (actual events)
     data = await request.json()
 
     print("STRAVA EVENT:", data)
 
-    # 1. STRAVA CHALLENGE (VERIFICATION STEP)
-    # Strava sender dette ved webhook setup
+    # IMPORTANT: Strava challenge
     if "hub.challenge" in data:
-        return {
-            "hub.challenge": data["hub.challenge"]
-        }
+        return {"hub.challenge": data["hub.challenge"]}
 
-    # 2. normal event (run, update osv.)
     return {"ok": True}
- 
+    
