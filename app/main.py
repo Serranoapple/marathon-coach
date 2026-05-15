@@ -53,16 +53,31 @@ async def telegram_webhook(request: Request):
 
     return {"ok": True}
     
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+
+@app.get("/")
+def root():
+    return {"status": "running"}
+
+
 @app.post("/strava-webhook")
 async def strava_webhook(request: Request):
+
+    # raw JSON fra Strava
     data = await request.json()
 
-    print("STRAVA EVENT RECEIVED:", data)
+    print("STRAVA EVENT:", data)
 
-    # Strava challenge verification (vigtigt!)
+    # 1. STRAVA CHALLENGE (VERIFICATION STEP)
+    # Strava sender dette ved webhook setup
     if "hub.challenge" in data:
         return {
             "hub.challenge": data["hub.challenge"]
         }
 
+    # 2. normal event (run, update osv.)
     return {"ok": True}
+ 
