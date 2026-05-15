@@ -52,3 +52,17 @@ async def telegram_webhook(request: Request):
     )
 
     return {"ok": True}
+    
+@app.post("/strava-webhook")
+async def strava_webhook(request: Request):
+    data = await request.json()
+
+    print("STRAVA EVENT RECEIVED:", data)
+
+    # Strava challenge verification (vigtigt!)
+    if "hub.challenge" in data:
+        return {
+            "hub.challenge": data["hub.challenge"]
+        }
+
+    return {"ok": True}
