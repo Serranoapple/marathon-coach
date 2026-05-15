@@ -25,6 +25,7 @@ import threading
 from bot.telegram_bot import main as bot_main
 
 def start_bot():
+    print("STARTING TELEGRAM THREAD")
     bot_main()
 
-threading.Thread(target=start_bot).start()
+threading.Thread(target=start_bot, daemon=True).start()
