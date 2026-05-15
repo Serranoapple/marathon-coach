@@ -1,3 +1,5 @@
+print("TELEGRAM_BOT MODULE IMPORTED")
+
 import os
 
 from telegram import Update
@@ -23,6 +25,7 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start_bot():
+  print("START_BOT FUNCTION RUNNING")  
     application = (
         Application.builder()
         .token(TOKEN)
