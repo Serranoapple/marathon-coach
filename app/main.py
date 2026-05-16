@@ -23,7 +23,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # TELEGRAM CHAT ID
 # -----------------------------------
 
-TELEGRAM_CHAT_ID = "DIT_CHAT_ID"
+TELEGRAM_CHAT_ID = "6863615870"
 
 # -----------------------------------
 # SUPABASE CLIENT
@@ -306,7 +306,7 @@ async def strava_webhook(request: Request):
                 requests.post(
                     f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                     json={
-                        "chat_id": 6863615870,
+                        "chat_id": TELEGRAM_CHAT_ID,
                         "text": feedback
                     }
                 )
