@@ -232,7 +232,7 @@ async def strava_webhook(request: Request):
             )
 
             # INDSÆT DIT TELEGRAM CHAT ID HER
-            TELEGRAM_CHAT_ID = "DIT_CHAT_ID"
+            TELEGRAM_CHAT_ID = "6863615870"
 
             try:
 
