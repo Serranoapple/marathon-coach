@@ -54,30 +54,66 @@ async def telegram_webhook(request: Request):
     return {"ok": True}
     
 from fastapi import FastAPI, Request
+import os
+import requests
 
 app = FastAPI()
+
+STRAVA_ACCESS_TOKEN = os.getenv("STRAVA_ACCESS_TOKEN")
+
+
+@app.get("/")
+def root():
+    return {"status": "running"}
 
 
 @app.api_route("/strava-webhook", methods=["GET", "POST"])
 async def strava_webhook(request: Request):
 
-    print("=== STRAVA REQUEST ===")
-    print("METHOD:", request.method)
-    print("URL:", request.url)
-    print("HEADERS:", dict(request.headers))
-    print("QUERY:", dict(request.query_params))
-
+    # -----------------------------------
+    # STRAVA VERIFICATION
+    # -----------------------------------
     if request.method == "GET":
         params = dict(request.query_params)
 
         if "hub.challenge" in params:
-            print("CHALLENGE FOUND:", params["hub.challenge"])
-            return {"hub.challenge": params["hub.challenge"]}
+            return {
+                "hub.challenge": params["hub.challenge"]
+            }
 
         return {"status": "ok"}
 
+    # -----------------------------------
+    # STRAVA EVENTS
+    # -----------------------------------
     data = await request.json()
-    print("POST BODY:", data)
+
+    print("STRAVA EVENT:", data)
+
+    # kun nye aktiviteter
+    if (
+        data.get("object_type") == "activity"
+        and data.get("aspect_type") == "create"
+    ):
+
+        activity_id = data.get("object_id")
+
+        print("NEW ACTIVITY:", activity_id)
+
+        # hent activity details
+        headers = {
+            "Authorization": f"Bearer {STRAVA_ACCESS_TOKEN}"
+        }
+
+        response = requests.get(
+            f"https://www.strava.com/api/v3/activities/{activity_id}",
+            headers=headers
+        )
+
+        activity = response.json()
+
+        print("ACTIVITY DATA:", activity)
 
     return {"ok": True}
+    
 
