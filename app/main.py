@@ -58,33 +58,26 @@ from fastapi import FastAPI, Request
 app = FastAPI()
 
 
-@app.get("/")
-def root():
-    return {"status": "running"}
-
-
 @app.api_route("/strava-webhook", methods=["GET", "POST"])
 async def strava_webhook(request: Request):
 
-    # --------------------------
-    # STRAVA VERIFICATION (GET)
-    # --------------------------
+    print("=== STRAVA REQUEST ===")
+    print("METHOD:", request.method)
+    print("URL:", request.url)
+    print("HEADERS:", dict(request.headers))
+    print("QUERY:", dict(request.query_params))
+
     if request.method == "GET":
         params = dict(request.query_params)
 
         if "hub.challenge" in params:
-            return {
-                "hub.challenge": params["hub.challenge"]
-            }
+            print("CHALLENGE FOUND:", params["hub.challenge"])
+            return {"hub.challenge": params["hub.challenge"]}
 
         return {"status": "ok"}
 
-    # --------------------------
-    # STRAVA EVENTS (POST)
-    # --------------------------
     data = await request.json()
-
-    print("STRAVA EVENT:", data)
+    print("POST BODY:", data)
 
     return {"ok": True}
-    
+
