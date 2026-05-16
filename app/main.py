@@ -1,27 +1,36 @@
 from fastapi import FastAPI, Request
 import os
+import requests
 
 print("MAIN.PY LOADED")
 
 app = FastAPI()
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# -----------------------------------
+# ENV VARIABLES
+# -----------------------------------
+STRAVA_ACCESS_TOKEN = os.getenv("STRAVA_ACCESS_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
-# -------- ROOT TEST --------
+# -----------------------------------
+# ROOT TEST
+# -----------------------------------
 @app.get("/")
 def root():
     return {"status": "running"}
 
 
-# -------- TELEGRAM WEBHOOK --------
+# -----------------------------------
+# TELEGRAM WEBHOOK
+# -----------------------------------
 @app.post("/telegram")
 async def telegram_webhook(request: Request):
+
     data = await request.json()
 
-    print("UPDATE RECEIVED:", data)
+    print("TELEGRAM EVENT:", data)
 
-    # Eksempel: simple command parsing
     message = data.get("message", {})
     text = message.get("text", "")
     chat_id = message.get("chat", {}).get("id")
@@ -33,18 +42,28 @@ async def telegram_webhook(request: Request):
 
     if text == "/start":
         response_text = "🏃 Marathon Coach aktiv"
-    elif text == "/status":
-        response_text = "CTL: 48 | ATL: 55 | TSB: -7"
-    elif text == "/today":
-        response_text = "Dagens træning kommer snart 🚀"
-    else:
-        response_text = "Ukendt kommando. Prøv /start, /status, /today"
 
-    # Send svar tilbage til Telegram
-    import requests
+    elif text == "/status":
+        response_text = "System status:\nCTL: 48\nATL: 55\nTSB: -7"
+
+    elif text == "/today":
+        response_text = (
+            "Dagens træning:\n"
+            "30 min roligt løb\n"
+            "Zone 2 fokus"
+        )
+
+    else:
+        response_text = (
+            "Ukendt kommando.\n"
+            "Prøv:\n"
+            "/start\n"
+            "/status\n"
+            "/today"
+        )
 
     requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
         json={
             "chat_id": chat_id,
             "text": response_text
@@ -52,31 +71,31 @@ async def telegram_webhook(request: Request):
     )
 
     return {"ok": True}
-    
-from fastapi import FastAPI, Request
-import os
-import requests
-
-app = FastAPI()
-
-STRAVA_ACCESS_TOKEN = os.getenv("STRAVA_ACCESS_TOKEN")
 
 
-@app.get("/")
-def root():
-    return {"status": "running"}
-
-
+# -----------------------------------
+# STRAVA WEBHOOK
+# -----------------------------------
 @app.api_route("/strava-webhook", methods=["GET", "POST"])
 async def strava_webhook(request: Request):
+
+    print("=== STRAVA REQUEST ===")
+    print("METHOD:", request.method)
+    print("URL:", request.url)
 
     # -----------------------------------
     # STRAVA VERIFICATION
     # -----------------------------------
     if request.method == "GET":
+
         params = dict(request.query_params)
 
+        print("QUERY PARAMS:", params)
+
         if "hub.challenge" in params:
+
+            print("CHALLENGE RECEIVED")
+
             return {
                 "hub.challenge": params["hub.challenge"]
             }
@@ -98,9 +117,8 @@ async def strava_webhook(request: Request):
 
         activity_id = data.get("object_id")
 
-        print("NEW ACTIVITY:", activity_id)
+        print("NEW ACTIVITY ID:", activity_id)
 
-        # hent activity details
         headers = {
             "Authorization": f"Bearer {STRAVA_ACCESS_TOKEN}"
         }
@@ -110,10 +128,66 @@ async def strava_webhook(request: Request):
             headers=headers
         )
 
+        print("STRAVA API STATUS:", response.status_code)
+
         activity = response.json()
 
         print("ACTIVITY DATA:", activity)
 
-    return {"ok": True}
-    
+        # -----------------------------------
+        # KUN LØB
+        # -----------------------------------
+        if activity.get("type") == "Run":
 
+            name = activity.get("name")
+
+            distance_km = round(
+                activity.get("distance", 0) / 1000,
+                2
+            )
+
+            moving_time = activity.get("moving_time", 0)
+
+            if distance_km > 0:
+
+                pace_seconds = moving_time / distance_km
+
+                minutes = int(pace_seconds // 60)
+                seconds = int(pace_seconds % 60)
+
+                pace = f"{minutes}:{seconds:02d}/km"
+
+            else:
+                pace = "N/A"
+
+            average_hr = activity.get("average_heartrate")
+
+            print("=== RUN DETECTED ===")
+            print("NAME:", name)
+            print("DISTANCE:", distance_km)
+            print("PACE:", pace)
+            print("AVG HR:", average_hr)
+
+            # -----------------------------------
+            # TELEGRAM FEEDBACK
+            # -----------------------------------
+            feedback = (
+                f"🏃 Ny løbetur registreret\n\n"
+                f"Navn: {name}\n"
+                f"Distance: {distance_km} km\n"
+                f"Pace: {pace}\n"
+                f"Puls: {average_hr}"
+            )
+
+            # INDSÆT DIT TELEGRAM CHAT ID HER
+            TELEGRAM_CHAT_ID = "DIT_CHAT_ID"
+
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": feedback
+                }
+            )
+
+    return {"ok": True}
