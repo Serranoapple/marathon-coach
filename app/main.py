@@ -6,8 +6,8 @@ from supabase import create_client
 
 from app.services.metrics_service import calculate_metrics
 from app.services.ai_service import generate_coaching_feedback
-from app.services.strava_service import refresh_access_token
 from app.services.prediction_service import predict_marathon
+from app.services.strava_service import refresh_access_token
 
 print("MAIN.PY LOADED")
 
@@ -16,8 +16,6 @@ app = FastAPI()
 # -----------------------------------
 # ENV VARIABLES
 # -----------------------------------
-
-STRAVA_ACCESS_TOKEN = os.getenv("STRAVA_ACCESS_TOKEN")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -78,7 +76,8 @@ async def telegram_webhook(request: Request):
             "Kommandoer:\n"
             "/status\n"
             "/today\n"
-            "/weekly"
+            "/weekly\n"
+            "/prediction"
         )
 
     elif text == "/status":
@@ -122,6 +121,19 @@ async def telegram_webhook(request: Request):
                 "\n\n⚠ Belastningen er høj."
             )
 
+    elif text == "/prediction":
+
+        metrics = calculate_metrics(supabase)
+
+        prediction = predict_marathon(metrics)
+
+        response_text = (
+            "🏁 Marathon Prediction\n\n"
+            f"Tid: {prediction['predicted_time']}\n"
+            f"Readiness: {prediction['readiness_score']}/100\n"
+            f"Sub 4 chance: {prediction['sub4_probability']}%"
+        )
+
     else:
 
         response_text = (
@@ -130,7 +142,8 @@ async def telegram_webhook(request: Request):
             "/start\n"
             "/status\n"
             "/today\n"
-            "/weekly"
+            "/weekly\n"
+            "/prediction"
         )
 
     # -----------------------------------
@@ -206,10 +219,14 @@ async def strava_webhook(request: Request):
 
         print("NEW ACTIVITY ID:", activity_id)
 
+        # -----------------------------------
+        # REFRESH ACCESS TOKEN
+        # -----------------------------------
+
         fresh_access_token = refresh_access_token()
 
         headers = {
-        "Authorization": f"Bearer {fresh_access_token}"
+            "Authorization": f"Bearer {fresh_access_token}"
         }
 
         response = requests.get(
@@ -224,17 +241,24 @@ async def strava_webhook(request: Request):
         print("ACTIVITY DATA:", activity)
 
         # -----------------------------------
-        # ONLY RUNS
+        # RUN DATA
         # -----------------------------------
 
-        if activity.get("type") == "Run":
+        distance_km = round(
+            activity.get("distance", 0) / 1000,
+            2
+        )
+
+        # -----------------------------------
+        # ONLY REAL RUNS
+        # -----------------------------------
+
+        if (
+            activity.get("type") == "Run"
+            and distance_km >= 1
+        ):
 
             name = activity.get("name")
-
-            distance_km = round(
-                activity.get("distance", 0) / 1000,
-                2
-            )
 
             moving_time = activity.get("moving_time", 0)
 
@@ -289,6 +313,14 @@ async def strava_webhook(request: Request):
             print("WEEKLY METRICS:", metrics)
 
             # -----------------------------------
+            # MARATHON PREDICTION
+            # -----------------------------------
+
+            prediction = predict_marathon(metrics)
+
+            print("MARATHON PREDICTION:", prediction)
+
+            # -----------------------------------
             # AI COACHING
             # -----------------------------------
 
@@ -340,6 +372,13 @@ async def strava_webhook(request: Request):
             feedback += (
                 f"\n\n🤖 AI Coach\n"
                 f"{ai_feedback}"
+            )
+
+            feedback += (
+                f"\n\n🏁 Marathon Prediction\n"
+                f"Tid: {prediction['predicted_time']}\n"
+                f"Readiness: {prediction['readiness_score']}/100\n"
+                f"Sub 4 chance: {prediction['sub4_probability']}%"
             )
 
             # -----------------------------------
