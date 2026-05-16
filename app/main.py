@@ -3,6 +3,8 @@ import os
 import requests
 from supabase import create_client
 
+from app.services.metrics_service import calculate_metrics
+
 print("MAIN.PY LOADED")
 
 app = FastAPI()
@@ -16,6 +18,12 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# -----------------------------------
+# TELEGRAM CHAT ID
+# -----------------------------------
+
+TELEGRAM_CHAT_ID = "DIT_CHAT_ID"
 
 # -----------------------------------
 # SUPABASE CLIENT
@@ -54,22 +62,29 @@ async def telegram_webhook(request: Request):
 
     response_text = None
 
+    # -----------------------------------
+    # COMMANDS
+    # -----------------------------------
+
     if text == "/start":
 
         response_text = (
             "🏃 Marathon Coach aktiv\n\n"
             "Kommandoer:\n"
             "/status\n"
-            "/today"
+            "/today\n"
+            "/weekly"
         )
 
     elif text == "/status":
 
+        metrics = calculate_metrics(supabase)
+
         response_text = (
             "📊 System status\n\n"
-            "Webhook: OK\n"
-            "Strava: Connected\n"
-            "Database: Connected"
+            f"Ugens km: {metrics['weekly_distance']}\n"
+            f"Antal løb: {metrics['run_count']}\n"
+            f"Gns pace: {metrics['average_pace']}"
         )
 
     elif text == "/today":
@@ -79,6 +94,23 @@ async def telegram_webhook(request: Request):
             "30 min roligt Zone 2 løb"
         )
 
+    elif text == "/weekly":
+
+        metrics = calculate_metrics(supabase)
+
+        response_text = (
+            "📈 Weekly Summary\n\n"
+            f"Distance: {metrics['weekly_distance']} km\n"
+            f"Antal løb: {metrics['run_count']}\n"
+            f"Gns pace: {metrics['average_pace']}"
+        )
+
+        if metrics["fatigue_warning"]:
+
+            response_text += (
+                "\n\n⚠ Belastningen er høj."
+            )
+
     else:
 
         response_text = (
@@ -86,16 +118,29 @@ async def telegram_webhook(request: Request):
             "Prøv:\n"
             "/start\n"
             "/status\n"
-            "/today"
+            "/today\n"
+            "/weekly"
         )
 
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": response_text
-        }
-    )
+    # -----------------------------------
+    # SEND TELEGRAM MESSAGE
+    # -----------------------------------
+
+    try:
+
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": response_text
+            }
+        )
+
+        print("TELEGRAM RESPONSE SENT")
+
+    except Exception as e:
+
+        print("TELEGRAM ERROR:", e)
 
     return {"ok": True}
 
@@ -137,7 +182,10 @@ async def strava_webhook(request: Request):
 
     print("STRAVA EVENT:", data)
 
-    # kun nye aktiviteter
+    # -----------------------------------
+    # ONLY NEW ACTIVITIES
+    # -----------------------------------
+
     if (
         data.get("object_type") == "activity"
         and data.get("aspect_type") == "create"
@@ -163,7 +211,7 @@ async def strava_webhook(request: Request):
         print("ACTIVITY DATA:", activity)
 
         # -----------------------------------
-        # KUN LØB
+        # ONLY RUNS
         # -----------------------------------
 
         if activity.get("type") == "Run":
@@ -199,7 +247,7 @@ async def strava_webhook(request: Request):
             print("AVG HR:", average_hr)
 
             # -----------------------------------
-            # SAVE TO SUPABASE
+            # SAVE TO DATABASE
             # -----------------------------------
 
             try:
@@ -220,6 +268,14 @@ async def strava_webhook(request: Request):
                 print("DATABASE ERROR:", e)
 
             # -----------------------------------
+            # CALCULATE METRICS
+            # -----------------------------------
+
+            metrics = calculate_metrics(supabase)
+
+            print("WEEKLY METRICS:", metrics)
+
+            # -----------------------------------
             # TELEGRAM FEEDBACK
             # -----------------------------------
 
@@ -228,18 +284,29 @@ async def strava_webhook(request: Request):
                 f"Navn: {name}\n"
                 f"Distance: {distance_km} km\n"
                 f"Pace: {pace}\n"
-                f"Puls: {average_hr}"
+                f"Puls: {average_hr}\n\n"
+                f"📊 Ugens statistik\n"
+                f"Ugens km: {metrics['weekly_distance']}\n"
+                f"Antal løb: {metrics['run_count']}\n"
+                f"Gns pace: {metrics['average_pace']}"
             )
 
-            # INDSÆT DIT TELEGRAM CHAT ID HER
-            TELEGRAM_CHAT_ID = "6863615870"
+            if metrics["fatigue_warning"]:
+
+                feedback += (
+                    "\n\n⚠ Belastningen er høj."
+                )
+
+            # -----------------------------------
+            # SEND TELEGRAM FEEDBACK
+            # -----------------------------------
 
             try:
 
                 requests.post(
                     f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                     json={
-                        "chat_id": TELEGRAM_CHAT_ID,
+                        "chat_id": 6863615870,
                         "text": feedback
                     }
                 )
@@ -251,3 +318,4 @@ async def strava_webhook(request: Request):
                 print("TELEGRAM ERROR:", e)
 
     return {"ok": True}
+
