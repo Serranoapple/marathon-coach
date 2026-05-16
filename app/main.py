@@ -205,8 +205,10 @@ async def strava_webhook(request: Request):
 
         print("NEW ACTIVITY ID:", activity_id)
 
+        fresh_access_token = refresh_access_token()
+
         headers = {
-            "Authorization": f"Bearer {STRAVA_ACCESS_TOKEN}"
+        "Authorization": f"Bearer {fresh_access_token}"
         }
 
         response = requests.get(
