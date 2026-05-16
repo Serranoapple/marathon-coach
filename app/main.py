@@ -7,6 +7,7 @@ from supabase import create_client
 from app.services.metrics_service import calculate_metrics
 from app.services.ai_service import generate_coaching_feedback
 from app.services.strava_service import refresh_access_token
+from app.services.prediction_service import predict_marathon
 
 print("MAIN.PY LOADED")
 
