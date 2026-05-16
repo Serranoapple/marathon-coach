@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 import os
 import requests
+from supabase import create_client
 
 print("MAIN.PY LOADED")
 
@@ -9,21 +10,34 @@ app = FastAPI()
 # -----------------------------------
 # ENV VARIABLES
 # -----------------------------------
+
 STRAVA_ACCESS_TOKEN = os.getenv("STRAVA_ACCESS_TOKEN")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# -----------------------------------
+# SUPABASE CLIENT
+# -----------------------------------
+
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
 
 # -----------------------------------
 # ROOT TEST
 # -----------------------------------
+
 @app.get("/")
 def root():
     return {"status": "running"}
 
-
 # -----------------------------------
 # TELEGRAM WEBHOOK
 # -----------------------------------
+
 @app.post("/telegram")
 async def telegram_webhook(request: Request):
 
@@ -41,21 +55,34 @@ async def telegram_webhook(request: Request):
     response_text = None
 
     if text == "/start":
-        response_text = "🏃 Marathon Coach aktiv"
+
+        response_text = (
+            "🏃 Marathon Coach aktiv\n\n"
+            "Kommandoer:\n"
+            "/status\n"
+            "/today"
+        )
 
     elif text == "/status":
-        response_text = "System status:\nCTL: 48\nATL: 55\nTSB: -7"
+
+        response_text = (
+            "📊 System status\n\n"
+            "Webhook: OK\n"
+            "Strava: Connected\n"
+            "Database: Connected"
+        )
 
     elif text == "/today":
+
         response_text = (
-            "Dagens træning:\n"
-            "30 min roligt løb\n"
-            "Zone 2 fokus"
+            "🏃 Dagens forslag\n\n"
+            "30 min roligt Zone 2 løb"
         )
 
     else:
+
         response_text = (
-            "Ukendt kommando.\n"
+            "Ukendt kommando.\n\n"
             "Prøv:\n"
             "/start\n"
             "/status\n"
@@ -72,20 +99,20 @@ async def telegram_webhook(request: Request):
 
     return {"ok": True}
 
-
 # -----------------------------------
 # STRAVA WEBHOOK
 # -----------------------------------
+
 @app.api_route("/strava-webhook", methods=["GET", "POST"])
 async def strava_webhook(request: Request):
 
     print("=== STRAVA REQUEST ===")
     print("METHOD:", request.method)
-    print("URL:", request.url)
 
     # -----------------------------------
     # STRAVA VERIFICATION
     # -----------------------------------
+
     if request.method == "GET":
 
         params = dict(request.query_params)
@@ -105,6 +132,7 @@ async def strava_webhook(request: Request):
     # -----------------------------------
     # STRAVA EVENTS
     # -----------------------------------
+
     data = await request.json()
 
     print("STRAVA EVENT:", data)
@@ -137,6 +165,7 @@ async def strava_webhook(request: Request):
         # -----------------------------------
         # KUN LØB
         # -----------------------------------
+
         if activity.get("type") == "Run":
 
             name = activity.get("name")
@@ -158,6 +187,7 @@ async def strava_webhook(request: Request):
                 pace = f"{minutes}:{seconds:02d}/km"
 
             else:
+
                 pace = "N/A"
 
             average_hr = activity.get("average_heartrate")
@@ -169,8 +199,30 @@ async def strava_webhook(request: Request):
             print("AVG HR:", average_hr)
 
             # -----------------------------------
+            # SAVE TO SUPABASE
+            # -----------------------------------
+
+            try:
+
+                supabase.table("runs").insert({
+                    "id": activity_id,
+                    "name": name,
+                    "distance_km": distance_km,
+                    "moving_time": moving_time,
+                    "pace": pace,
+                    "average_hr": average_hr
+                }).execute()
+
+                print("RUN SAVED TO DATABASE")
+
+            except Exception as e:
+
+                print("DATABASE ERROR:", e)
+
+            # -----------------------------------
             # TELEGRAM FEEDBACK
             # -----------------------------------
+
             feedback = (
                 f"🏃 Ny løbetur registreret\n\n"
                 f"Navn: {name}\n"
@@ -180,14 +232,22 @@ async def strava_webhook(request: Request):
             )
 
             # INDSÆT DIT TELEGRAM CHAT ID HER
-            TELEGRAM_CHAT_ID = "6863615870"
+            TELEGRAM_CHAT_ID = "DIT_CHAT_ID"
 
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={
-                    "chat_id": TELEGRAM_CHAT_ID,
-                    "text": feedback
-                }
-            )
+            try:
+
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": TELEGRAM_CHAT_ID,
+                        "text": feedback
+                    }
+                )
+
+                print("TELEGRAM MESSAGE SENT")
+
+            except Exception as e:
+
+                print("TELEGRAM ERROR:", e)
 
     return {"ok": True}
