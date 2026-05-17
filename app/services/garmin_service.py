@@ -5,8 +5,8 @@ from datetime import date
 
 def get_garmin_client():
 
-    email = os.getenv("GARMIN_EMAIL")
-    password = os.getenv("GARMIN_PASSWORD")
+    email = os.getenv("peter.boegh.soerensen@gmail.com")
+    password = os.getenv("audiaudiA4")
 
     client = Garmin(email, password)
     client.login()
