@@ -36,6 +36,10 @@ from app.services.recovery_service import (
     calculate_recovery_status
 )
 
+from app.services.trend_service import (
+    calculate_trend_analysis
+)
+
 print("MAIN.PY LOADED")
 
 app = FastAPI()
@@ -150,8 +154,13 @@ async def telegram_webhook(
             "/today\n"
             "/weekly\n"
             "/prediction\n"
-            "/recovery"
+            "/recovery\n"
+            "/trend"
         )
+
+    # -----------------------------------
+    # STATUS
+    # -----------------------------------
 
     elif text == "/status":
 
@@ -169,18 +178,32 @@ async def telegram_webhook(
             )
         )
 
+        trend = (
+            calculate_trend_analysis(
+                supabase
+            )
+        )
+
         response_text = (
             "📊 System status\n\n"
+
             f"Ugens km: "
             f"{metrics['weekly_distance']}\n"
+
             f"Antal løb: "
             f"{metrics['run_count']}\n"
+
             f"Gns pace: "
             f"{metrics['average_pace']}\n"
+
             f"Readiness: "
             f"{prediction['readiness_score']}/100\n"
+
             f"Recovery: "
-            f"{recovery['status']}"
+            f"{recovery['status']}\n"
+
+            f"Trend: "
+            f"{trend['trend']}"
         )
 
         if metrics["fatigue_warning"]:
@@ -188,6 +211,10 @@ async def telegram_webhook(
             response_text += (
                 "\n\n⚠ Belastningen er høj."
             )
+
+    # -----------------------------------
+    # TODAY
+    # -----------------------------------
 
     elif text == "/today":
 
@@ -212,12 +239,27 @@ async def telegram_webhook(
             )
         )
 
+        trend = (
+            calculate_trend_analysis(
+                supabase
+            )
+        )
+
         response_text = (
             "📅 Dagens anbefaling\n\n"
+
             f"{recommendation}\n\n"
+
             f"🩺 Recovery\n"
-            f"{recovery['message']}"
+            f"{recovery['message']}\n\n"
+
+            f"📈 Trend\n"
+            f"{trend['message']}"
         )
+
+    # -----------------------------------
+    # WEEKLY
+    # -----------------------------------
 
     elif text == "/weekly":
 
@@ -242,16 +284,30 @@ async def telegram_webhook(
             )
         )
 
+        trend = (
+            calculate_trend_analysis(
+                supabase
+            )
+        )
+
         response_text = (
             "📈 Weekly Summary\n\n"
+
             f"Distance: "
             f"{metrics['weekly_distance']} km\n"
+
             f"Antal løb: "
             f"{metrics['run_count']}\n"
+
             f"Gns pace: "
             f"{metrics['average_pace']}\n\n"
+
             f"🩺 Recovery\n"
             f"{recovery['message']}\n\n"
+
+            f"📈 Trend\n"
+            f"{trend['message']}\n\n"
+
             f"📅 Recommendation\n"
             f"{recommendation}"
         )
@@ -261,6 +317,10 @@ async def telegram_webhook(
             response_text += (
                 "\n\n⚠ Belastningen er høj."
             )
+
+    # -----------------------------------
+    # PREDICTION
+    # -----------------------------------
 
     elif text == "/prediction":
 
@@ -278,17 +338,34 @@ async def telegram_webhook(
             )
         )
 
+        trend = (
+            calculate_trend_analysis(
+                supabase
+            )
+        )
+
         response_text = (
             "🏁 Marathon Prediction\n\n"
+
             f"Tid: "
             f"{prediction['predicted_time']}\n"
+
             f"Readiness: "
             f"{prediction['readiness_score']}/100\n"
+
             f"Sub 4 chance: "
             f"{prediction['sub4_probability']}%\n\n"
+
             f"🩺 Recovery\n"
-            f"{recovery['message']}"
+            f"{recovery['message']}\n\n"
+
+            f"📈 Trend\n"
+            f"{trend['message']}"
         )
+
+    # -----------------------------------
+    # RECOVERY
+    # -----------------------------------
 
     elif text == "/recovery":
 
@@ -300,26 +377,66 @@ async def telegram_webhook(
 
         response_text = (
             "🩺 Recovery Status\n\n"
+
             f"Acute load: "
             f"{recovery['acute_load']} km\n"
+
             f"Chronic load: "
             f"{recovery['chronic_load']} km\n"
+
             f"Ratio: "
             f"{recovery['load_ratio']}\n\n"
+
             f"{recovery['message']}"
         )
+
+    # -----------------------------------
+    # TREND
+    # -----------------------------------
+
+    elif text == "/trend":
+
+        trend = (
+            calculate_trend_analysis(
+                supabase
+            )
+        )
+
+        response_text = (
+            "📈 Trend Analysis\n\n"
+
+            f"{trend['message']}\n\n"
+
+            f"Seneste 14 dage: "
+            f"{trend['recent_distance']} km\n"
+
+            f"Forrige 14 dage: "
+            f"{trend['older_distance']} km\n\n"
+
+            f"Recent runs: "
+            f"{trend['recent_runs']}\n"
+
+            f"Older runs: "
+            f"{trend['older_runs']}"
+        )
+
+    # -----------------------------------
+    # UNKNOWN
+    # -----------------------------------
 
     else:
 
         response_text = (
             "Ukendt kommando.\n\n"
+
             "Prøv:\n"
             "/start\n"
             "/status\n"
             "/today\n"
             "/weekly\n"
             "/prediction\n"
-            "/recovery"
+            "/recovery\n"
+            "/trend"
         )
 
     # -----------------------------------
@@ -482,337 +599,4 @@ async def strava_webhook(
 
         # -----------------------------------
         # ONLY RUNS
-        # -----------------------------------
-
-        if (
-            activity.get("type")
-            == "Run"
-        ):
-
-            name = activity.get(
-                "name"
-            )
-
-            moving_time = (
-                activity.get(
-                    "moving_time",
-                    0
-                )
-            )
-
-            if distance_km > 0:
-
-                pace_seconds = (
-                    moving_time /
-                    distance_km
-                )
-
-                minutes = int(
-                    pace_seconds // 60
-                )
-
-                seconds = int(
-                    pace_seconds % 60
-                )
-
-                pace = (
-                    f"{minutes}:"
-                    f"{seconds:02d}/km"
-                )
-
-            else:
-
-                pace = "N/A"
-
-            average_hr = (
-                activity.get(
-                    "average_heartrate"
-                )
-            )
-
-            print(
-                "=== RUN DETECTED ==="
-            )
-
-            print(
-                "NAME:",
-                name
-            )
-
-            print(
-                "DISTANCE:",
-                distance_km
-            )
-
-            print(
-                "PACE:",
-                pace
-            )
-
-            print(
-                "AVG HR:",
-                average_hr
-            )
-
-            # -----------------------------------
-            # SAVE TO DATABASE
-            # -----------------------------------
-
-            try:
-
-                supabase.table(
-                    "runs"
-                ).insert({
-                    "id":
-                    activity_id,
-
-                    "name":
-                    name,
-
-                    "distance_km":
-                    distance_km,
-
-                    "moving_time":
-                    moving_time,
-
-                    "pace":
-                    pace,
-
-                    "average_hr":
-                    average_hr
-                }).execute()
-
-                print(
-                    "RUN SAVED "
-                    "TO DATABASE"
-                )
-
-            except Exception as e:
-
-                print(
-                    "DATABASE ERROR:",
-                    e
-                )
-
-            # -----------------------------------
-            # METRICS
-            # -----------------------------------
-
-            metrics = (
-                calculate_metrics(
-                    supabase
-                )
-            )
-
-            print(
-                "WEEKLY METRICS:",
-                metrics
-            )
-
-            # -----------------------------------
-            # PREDICTION
-            # -----------------------------------
-
-            prediction = (
-                predict_marathon(
-                    metrics
-                )
-            )
-
-            print(
-                "MARATHON "
-                "PREDICTION:",
-                prediction
-            )
-
-            # -----------------------------------
-            # RECOVERY
-            # -----------------------------------
-
-            recovery = (
-                calculate_recovery_status(
-                    supabase
-                )
-            )
-
-            print(
-                "RECOVERY:",
-                recovery
-            )
-
-            # -----------------------------------
-            # TRAINING PLAN
-            # -----------------------------------
-
-            recommendation = (
-                generate_training_recommendation(
-                    metrics,
-                    prediction
-                )
-            )
-
-            print(
-                "TRAINING "
-                "RECOMMENDATION:",
-                recommendation
-            )
-
-            # -----------------------------------
-            # AI COACHING
-            # -----------------------------------
-
-            run_data = {
-                "distance_km":
-                distance_km,
-
-                "pace":
-                pace,
-
-                "average_hr":
-                average_hr
-            }
-
-            try:
-
-                ai_feedback = (
-                    generate_coaching_feedback(
-                        run_data,
-                        metrics
-                    )
-                )
-
-                print(
-                    "AI FEEDBACK:",
-                    ai_feedback
-                )
-
-            except Exception as e:
-
-                print(
-                    "AI ERROR:",
-                    e
-                )
-
-                ai_feedback = (
-                    "AI coaching "
-                    "midlertidigt "
-                    "utilgængelig."
-                )
-
-            # -----------------------------------
-            # TELEGRAM FEEDBACK
-            # -----------------------------------
-
-            feedback = (
-                f"🏃 Ny løbetur "
-                f"registreret\n\n"
-
-                f"Navn: {name}\n"
-
-                f"Distance: "
-                f"{distance_km} km\n"
-
-                f"Pace: {pace}\n"
-
-                f"Puls: "
-                f"{average_hr}\n\n"
-
-                f"📊 Ugens statistik\n"
-
-                f"Ugens km: "
-                f"{metrics['weekly_distance']}\n"
-
-                f"Antal løb: "
-                f"{metrics['run_count']}\n"
-
-                f"Gns pace: "
-                f"{metrics['average_pace']}"
-            )
-
-            if (
-                metrics[
-                    "fatigue_warning"
-                ]
-            ):
-
-                feedback += (
-                    "\n\n⚠ Belastningen "
-                    "er høj."
-                )
-
-            feedback += (
-                f"\n\n🤖 AI Coach\n"
-                f"{ai_feedback}"
-            )
-
-            feedback += (
-                f"\n\n🏁 Marathon "
-                f"Prediction\n"
-
-                f"Tid: "
-                f"{prediction['predicted_time']}\n"
-
-                f"Readiness: "
-                f"{prediction['readiness_score']}"
-                f"/100\n"
-
-                f"Sub 4 chance: "
-                f"{prediction['sub4_probability']}"
-                f"%"
-            )
-
-            feedback += (
-                f"\n\n🩺 Recovery "
-                f"Status\n"
-
-                f"Acute load: "
-                f"{recovery['acute_load']} km\n"
-
-                f"Chronic load: "
-                f"{recovery['chronic_load']} km\n"
-
-                f"Ratio: "
-                f"{recovery['load_ratio']}\n\n"
-
-                f"{recovery['message']}"
-            )
-
-            feedback += (
-                f"\n\n📅 Næste "
-                f"anbefaling\n"
-
-                f"{recommendation}"
-            )
-
-            # -----------------------------------
-            # SEND TELEGRAM FEEDBACK
-            # -----------------------------------
-
-            try:
-
-                requests.post(
-                    f"https://api.telegram.org/"
-                    f"bot{TELEGRAM_BOT_TOKEN}/"
-                    f"sendMessage",
-                    json={
-                        "chat_id":
-                        TELEGRAM_CHAT_ID,
-
-                        "text":
-                        feedback
-                    }
-                )
-
-                print(
-                    "TELEGRAM "
-                    "MESSAGE SENT"
-                )
-
-            except Exception as e:
-
-                print(
-                    "TELEGRAM ERROR:",
-                    e
-                )
-
-    return {"ok": True}
+        # --------------------------------
