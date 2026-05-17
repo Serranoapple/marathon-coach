@@ -42,8 +42,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(
     lambda: send_daily_briefing(supabase),
     "cron",
-    hour=5,
-    minute=0
+     minute="*/2" 
 )
 
 scheduler.start()
