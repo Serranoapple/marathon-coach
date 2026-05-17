@@ -253,8 +253,10 @@ async def strava_webhook(request: Request):
         # ONLY REAL RUNS
         # -----------------------------------
 
-
-        if activity.get("type") == "Run":
+      if (
+      activity.get("type") == "Run"
+      and distance_km >= 0.1
+       ):  
         
         name = activity.get("name")
 
