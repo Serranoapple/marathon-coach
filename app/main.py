@@ -14,6 +14,10 @@ from app.services.briefing_service import (
     send_daily_briefing
 )
 
+from app.services.training_plan_service import (
+    generate_training_recommendation
+)
+
 print("MAIN.PY LOADED")
 
 app = FastAPI()
