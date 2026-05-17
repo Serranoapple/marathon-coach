@@ -5,10 +5,21 @@ import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from supabase import create_client
 
-from app.services.metrics_service import calculate_metrics
-from app.services.ai_service import generate_coaching_feedback
-from app.services.prediction_service import predict_marathon
-from app.services.strava_service import refresh_access_token
+from app.services.metrics_service import (
+    calculate_metrics
+)
+
+from app.services.ai_service import (
+    generate_coaching_feedback
+)
+
+from app.services.prediction_service import (
+    predict_marathon
+)
+
+from app.services.strava_service import (
+    refresh_access_token
+)
 
 from app.services.training_plan_service import (
     generate_training_recommendation
@@ -36,6 +47,11 @@ from app.services.weekly_plan_service import (
 
 from app.services.adaptive_planner_service import (
     generate_daily_adaptive_plan
+)
+
+from app.services.health_service import (
+    save_health_metric,
+    get_latest_health_metrics
 )
 
 print("MAIN.PY LOADED")
@@ -364,7 +380,7 @@ async def telegram_webhook(
         )
 
     # -----------------------------------
-    # ADAPTIVE DAILY PLAN
+    # ADAPTIVE PLAN
     # -----------------------------------
 
     elif text == "/adaptive":
@@ -392,6 +408,195 @@ async def telegram_webhook(
         )
 
     # -----------------------------------
+    # HEALTH STATUS
+    # -----------------------------------
+
+    elif text == "/health":
+
+        health = (
+            get_latest_health_metrics(
+                supabase
+            )
+        )
+
+        if not health:
+
+            response_text = (
+                "Ingen health data endnu."
+            )
+
+        else:
+
+            response_text = (
+                "🧬 Health Metrics\n\n"
+
+                f"😴 Søvn: "
+                f"{health.get('sleep_hours')}\n"
+
+                f"❤️ HRV: "
+                f"{health.get('hrv')}\n"
+
+                f"🔋 Body Battery: "
+                f"{health.get('body_battery')}\n"
+
+                f"❤️ RHR: "
+                f"{health.get('resting_hr')}\n"
+
+                f"⚖ Vægt: "
+                f"{health.get('weight')}"
+            )
+
+    # -----------------------------------
+    # SAVE SLEEP
+    # -----------------------------------
+
+    elif text.startswith("/sleep"):
+
+        try:
+
+            value = float(
+                text.split(" ")[1]
+            )
+
+            save_health_metric(
+                supabase,
+                "sleep_hours",
+                value
+            )
+
+            response_text = (
+                f"😴 Søvn gemt: "
+                f"{value} timer"
+            )
+
+        except:
+
+            response_text = (
+                "Brug:\n"
+                "/sleep 7.5"
+            )
+
+    # -----------------------------------
+    # SAVE HRV
+    # -----------------------------------
+
+    elif text.startswith("/hrv"):
+
+        try:
+
+            value = int(
+                text.split(" ")[1]
+            )
+
+            save_health_metric(
+                supabase,
+                "hrv",
+                value
+            )
+
+            response_text = (
+                f"❤️ HRV gemt: "
+                f"{value}"
+            )
+
+        except:
+
+            response_text = (
+                "Brug:\n"
+                "/hrv 62"
+            )
+
+    # -----------------------------------
+    # SAVE BODY BATTERY
+    # -----------------------------------
+
+    elif text.startswith("/body"):
+
+        try:
+
+            value = int(
+                text.split(" ")[1]
+            )
+
+            save_health_metric(
+                supabase,
+                "body_battery",
+                value
+            )
+
+            response_text = (
+                f"🔋 Body Battery gemt: "
+                f"{value}"
+            )
+
+        except:
+
+            response_text = (
+                "Brug:\n"
+                "/body 78"
+            )
+
+    # -----------------------------------
+    # SAVE RESTING HR
+    # -----------------------------------
+
+    elif text.startswith("/rhr"):
+
+        try:
+
+            value = int(
+                text.split(" ")[1]
+            )
+
+            save_health_metric(
+                supabase,
+                "resting_hr",
+                value
+            )
+
+            response_text = (
+                f"❤️ Resting HR gemt: "
+                f"{value}"
+            )
+
+        except:
+
+            response_text = (
+                "Brug:\n"
+                "/rhr 49"
+            )
+
+    # -----------------------------------
+    # SAVE WEIGHT
+    # -----------------------------------
+
+    elif text.startswith("/weight"):
+
+        try:
+
+            value = float(
+                text.split(" ")[1]
+            )
+
+            save_health_metric(
+                supabase,
+                "weight",
+                value
+            )
+
+            response_text = (
+                f"⚖ Vægt gemt: "
+                f"{value} kg"
+            )
+
+        except:
+
+            response_text = (
+                "Brug:\n"
+                "/weight 81.4"
+            )
+
+    # -----------------------------------
     # START
     # -----------------------------------
 
@@ -410,7 +615,16 @@ async def telegram_webhook(
             "/trend\n"
             "/fitness\n"
             "/plan\n"
-            "/adaptive"
+            "/adaptive\n"
+            "/health\n\n"
+
+            "Health tracking:\n"
+
+            "/sleep 7.5\n"
+            "/hrv 62\n"
+            "/body 78\n"
+            "/rhr 49\n"
+            "/weight 81.4"
         )
 
     # -----------------------------------
@@ -422,7 +636,7 @@ async def telegram_webhook(
         response_text = (
             "Ukendt kommando.\n\n"
 
-            "Prøv:\n"
+            "Prøv:\n\n"
 
             "/status\n"
             "/today\n"
@@ -432,7 +646,8 @@ async def telegram_webhook(
             "/trend\n"
             "/fitness\n"
             "/plan\n"
-            "/adaptive"
+            "/adaptive\n"
+            "/health"
         )
 
     # -----------------------------------
@@ -720,10 +935,6 @@ async def strava_webhook(
                     prediction
                 )
             )
-
-            # -----------------------------------
-            # WEEKLY PLAN
-            # -----------------------------------
 
             weekly_plan = (
                 generate_weekly_plan(
