@@ -15,6 +15,7 @@ from app.services.briefing_service import send_daily_briefing
 from app.services.recovery_service import calculate_recovery_status
 from app.services.trend_service import calculate_trend_analysis
 from app.services.fitness_service import calculate_fitness_score
+from app.services.weekly_plan_service import generate_weekly_plan
 
 print("MAIN.PY LOADED")
 
@@ -88,14 +89,14 @@ async def telegram_webhook(request: Request):
         fitness = calculate_fitness_score(metrics, recovery, trend)
 
         response_text = (
-            "📊 System status\n\n"
+            "📊 Status\n\n"
             f"Km: {metrics['weekly_distance']}\n"
             f"Løb: {metrics['run_count']}\n"
             f"Pace: {metrics['average_pace']}\n"
             f"Readiness: {prediction['readiness_score']}/100\n"
             f"Recovery: {recovery['status']}\n"
-            f"Trend: {trend['trend']}\n\n"
-            f"🧠 Fitness: {fitness['score']}/100\n"
+            f"Trend: {trend['trend']}\n"
+            f"Fitness: {fitness['score']}/100\n"
             f"{fitness['message']}"
         )
 
@@ -118,12 +119,11 @@ async def telegram_webhook(request: Request):
             f"{recommendation}\n\n"
             f"🩺 {recovery['message']}\n"
             f"📈 {trend['message']}\n"
-            f"🧠 Fitness: {fitness['score']}/100\n"
-            f"{fitness['message']}"
+            f"🧠 Fitness {fitness['score']}/100"
         )
 
     # -----------------------------------
-    # WEEKLY
+    # WEEKLY SUMMARY
     # -----------------------------------
 
     elif text == "/weekly":
@@ -143,9 +143,8 @@ async def telegram_webhook(request: Request):
             f"{metrics['average_pace']}\n\n"
             f"🩺 {recovery['message']}\n"
             f"📈 {trend['message']}\n"
-            f"🧠 Fitness: {fitness['score']}/100\n"
-            f"{fitness['message']}\n\n"
-            f"📅 {recommendation}"
+            f"🧠 Fitness {fitness['score']}/100\n\n"
+            f"{recommendation}"
         )
 
     # -----------------------------------
@@ -161,14 +160,13 @@ async def telegram_webhook(request: Request):
         fitness = calculate_fitness_score(metrics, recovery, trend)
 
         response_text = (
-            "🏁 Marathon Prediction\n\n"
+            "🏁 Prediction\n\n"
             f"Tid: {prediction['predicted_time']}\n"
             f"Readiness: {prediction['readiness_score']}/100\n"
             f"Sub4: {prediction['sub4_probability']}%\n\n"
             f"🩺 {recovery['message']}\n"
             f"📈 {trend['message']}\n"
-            f"🧠 Fitness: {fitness['score']}/100\n"
-            f"{fitness['message']}"
+            f"🧠 Fitness {fitness['score']}/100"
         )
 
     # -----------------------------------
@@ -181,7 +179,7 @@ async def telegram_webhook(request: Request):
 
         response_text = (
             "🩺 Recovery\n\n"
-            f"{recovery['message']}\n\n"
+            f"{recovery['message']}\n"
             f"Ratio: {recovery['load_ratio']}"
         )
 
@@ -195,8 +193,8 @@ async def telegram_webhook(request: Request):
 
         response_text = (
             "📈 Trend\n\n"
-            f"{trend['message']}\n\n"
-            f"{trend['recent_distance']} km vs {trend['older_distance']} km"
+            f"{trend['message']}\n"
+            f"{trend['recent_distance']} vs {trend['older_distance']} km"
         )
 
     # -----------------------------------
@@ -218,6 +216,30 @@ async def telegram_webhook(request: Request):
         )
 
     # -----------------------------------
+    # WEEKLY PLAN (NEW)
+    # -----------------------------------
+
+    elif text == "/plan":
+
+        metrics = calculate_metrics(supabase)
+        recovery = calculate_recovery_status(supabase)
+        trend = calculate_trend_analysis(supabase)
+        fitness = calculate_fitness_score(metrics, recovery, trend)
+
+        plan = generate_weekly_plan(
+            metrics,
+            recovery,
+            fitness,
+            trend
+        )
+
+        response_text = (
+            "🗓 Ugeplan\n\n"
+            + "\n".join(plan["plan"])
+            + f"\n\nIntensitet: {plan['intensity']}"
+        )
+
+    # -----------------------------------
     # DEFAULT
     # -----------------------------------
 
@@ -231,7 +253,8 @@ async def telegram_webhook(request: Request):
             "/prediction\n"
             "/recovery\n"
             "/trend\n"
-            "/fitness"
+            "/fitness\n"
+            "/plan"
         )
 
     # -----------------------------------
@@ -284,12 +307,10 @@ async def strava_webhook(request: Request):
 
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = requests.get(
+        activity = requests.get(
             f"https://www.strava.com/api/v3/activities/{activity_id}",
             headers=headers
-        )
-
-        activity = response.json()
+        ).json()
 
         distance_km = round(activity.get("distance", 0) / 1000, 2)
 
@@ -310,12 +331,21 @@ async def strava_webhook(request: Request):
             trend = calculate_trend_analysis(supabase)
             fitness = calculate_fitness_score(metrics, recovery, trend)
 
+            plan_preview = generate_weekly_plan(
+                metrics,
+                recovery,
+                fitness,
+                trend
+            )
+
             feedback = (
-                f"🏃 Run registered\n\n"
+                f"🏃 Run\n\n"
                 f"{activity.get('name')}\n"
                 f"{distance_km} km\n\n"
                 f"🧠 Fitness: {fitness['score']}/100\n"
-                f"{fitness['message']}"
+                f"{fitness['message']}\n\n"
+                "🗓 Plan preview:\n"
+                + "\n".join(plan_preview["plan"][:3])
             )
 
             requests.post(
