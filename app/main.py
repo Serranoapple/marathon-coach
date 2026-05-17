@@ -6,26 +6,26 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from supabase import create_client
 
 from app.services.metrics_service import calculate_metrics
-from app.services.ai_service import generate_coaching_feedback
 from app.services.prediction_service import predict_marathon
-from app.services.strava_service import refresh_access_token
-from app.services.training_plan_service import generate_training_recommendation
-from app.services.briefing_service import send_daily_briefing
-
 from app.services.recovery_service import calculate_recovery_status
 from app.services.trend_service import calculate_trend_analysis
 from app.services.fitness_service import calculate_fitness_score
-from app.services.weekly_plan_service import generate_weekly_plan
-from app.services.adaptive_planner_service import generate_daily_adaptive_plan
 
-from app.services.health_service import (
-    get_latest_health_metrics,
-    save_health_metric
-)
+from app.services.training_plan_service import generate_training_recommendation
+from app.services.adaptive_planner_service import generate_daily_adaptive_plan
+from app.services.weekly_plan_service import generate_weekly_plan
+
+from app.services.health_service import get_latest_health_metrics
 
 from app.services.recovery_intelligence_v4 import (
     calculate_recovery_intelligence_v4
 )
+
+# 🆕 GARMIN LEVEL 1 SYNC
+from app.services.garmin_service import sync_garmin_health_to_supabase
+
+from app.services.briefing_service import send_daily_briefing
+from app.services.strava_service import refresh_access_token
 
 print("MAIN.PY LOADED")
 
@@ -49,10 +49,20 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 scheduler = BackgroundScheduler()
 
+# 🟢 Daily briefing
 scheduler.add_job(
     lambda: send_daily_briefing(supabase),
     "cron",
     hour=5,
+    minute=0
+)
+
+# 🆕 GARMIN SYNC (LEVEL 1 MIDDLEWARE)
+# Dette kører 1 gang om dagen og henter Garmin data → Supabase
+scheduler.add_job(
+    lambda: sync_garmin_health_to_supabase(supabase),
+    "cron",
+    hour=6,
     minute=0
 )
 
@@ -86,10 +96,8 @@ async def telegram_webhook(request: Request):
     if not chat_id:
         return {"ok": True}
 
-    response_text = None
-
     # -----------------------------------
-    # CORE DATA
+    # CORE DATA PIPELINE
     # -----------------------------------
 
     metrics = calculate_metrics(supabase)
@@ -107,6 +115,8 @@ async def telegram_webhook(request: Request):
         trend
     )
 
+    response_text = None
+
     # -----------------------------------
     # STATUS
     # -----------------------------------
@@ -119,7 +129,6 @@ async def telegram_webhook(request: Request):
             f"Løb: {metrics['run_count']}\n"
             f"Pace: {metrics['average_pace']}\n\n"
             f"🏁 Readiness: {prediction['readiness_score']}/100\n"
-            f"📈 Trend: {trend['trend']}\n"
             f"🧠 Fitness: {fitness['score']}/100\n"
             f"🧬 Recovery V4: {recovery_v4['score']}/100\n"
             f"{recovery_v4['message']}"
@@ -131,12 +140,11 @@ async def telegram_webhook(request: Request):
 
     elif text == "/today":
 
-        recommendation = generate_training_recommendation(metrics, prediction)
+        plan = generate_training_recommendation(metrics, prediction)
 
         response_text = (
-            "📅 Dagens anbefaling\n\n"
-            f"{recommendation}\n\n"
-            f"🧠 Fitness: {fitness['score']}/100\n"
+            "📅 Dagens træning\n\n"
+            f"{plan}\n\n"
             f"🧬 Recovery: {recovery_v4['message']}"
         )
 
@@ -146,17 +154,14 @@ async def telegram_webhook(request: Request):
 
     elif text == "/weekly":
 
-        recommendation = generate_training_recommendation(metrics, prediction)
+        plan = generate_weekly_plan(metrics, recovery, fitness, trend)
 
         response_text = (
-            "📈 Weekly Summary\n\n"
-            f"{metrics['weekly_distance']} km\n"
-            f"{metrics['run_count']} løb\n"
-            f"{metrics['average_pace']}\n\n"
-            f"🧠 Fitness: {fitness['score']}/100\n"
-            f"🧬 Recovery V4: {recovery_v4['score']}/100\n"
-            f"{recovery_v4['message']}\n\n"
-            f"{recommendation}"
+            "📈 Ugeplan\n\n"
+            f"Km: {metrics['weekly_distance']}\n"
+            f"Løb: {metrics['run_count']}\n\n"
+            + "\n".join(plan["plan"]) +
+            f"\n\n🧬 Recovery V4: {recovery_v4['score']}/100"
         )
 
     # -----------------------------------
@@ -166,22 +171,10 @@ async def telegram_webhook(request: Request):
     elif text == "/prediction":
 
         response_text = (
-            "🏁 Prediction\n\n"
+            "🏁 Marathon Prediction\n\n"
             f"Tid: {prediction['predicted_time']}\n"
             f"Readiness: {prediction['readiness_score']}/100\n"
-            f"Sub4: {prediction['sub4_probability']}%\n"
-        )
-
-    # -----------------------------------
-    # RECOVERY
-    # -----------------------------------
-
-    elif text == "/recovery":
-
-        response_text = (
-            "🩺 Recovery\n\n"
-            f"{recovery['message']}\n"
-            f"Load ratio: {recovery['load_ratio']}"
+            f"Sub4: {prediction['sub4_probability']}%"
         )
 
     # -----------------------------------
@@ -193,7 +186,6 @@ async def telegram_webhook(request: Request):
         response_text = (
             "🧠 Fitness\n\n"
             f"{fitness['score']}/100\n"
-            f"{fitness['label']}\n"
             f"{fitness['message']}"
         )
 
@@ -213,24 +205,22 @@ async def telegram_webhook(request: Request):
 
         response_text = (
             "🧠 Adaptive Coach\n\n"
-            f"{adaptive['day']}\n"
-            f"{adaptive['intensity']}\n\n"
             f"{adaptive['workout']}\n\n"
+            f"Intensitet: {adaptive['intensity']}\n\n"
             f"🧬 Recovery V4: {recovery_v4['score']}/100"
         )
 
     # -----------------------------------
-    # HEALTH STATUS
+    # HEALTH (now Garmin-fed if sync works)
     # -----------------------------------
 
     elif text == "/health":
 
         if not health:
-            response_text = "Ingen health data endnu."
-
+            response_text = "Ingen health data endnu (vent på Garmin sync)."
         else:
             response_text = (
-                "🧬 Health\n\n"
+                "🧬 Garmin Health Data\n\n"
                 f"Søvn: {health.get('sleep_hours')}\n"
                 f"HRV: {health.get('hrv')}\n"
                 f"Body Battery: {health.get('body_battery')}\n"
@@ -239,13 +229,13 @@ async def telegram_webhook(request: Request):
             )
 
     # -----------------------------------
-    # UNKNOWN
+    # DEFAULT
     # -----------------------------------
 
     else:
 
         response_text = (
-            "Kommandoer:\n"
+            "Kommandoer:\n\n"
             "/status\n"
             "/today\n"
             "/weekly\n"
@@ -314,13 +304,11 @@ async def strava_webhook(request: Request):
         moving_time = activity.get("moving_time", 0)
         avg_hr = activity.get("average_heartrate")
 
-        # pace
         pace = "N/A"
         if distance_km > 0:
             pace_sec = moving_time / distance_km
             pace = f"{int(pace_sec//60)}:{int(pace_sec%60):02d}/km"
 
-        # save run
         supabase.table("runs").insert({
             "id": activity_id,
             "name": activity.get("name"),
@@ -330,7 +318,6 @@ async def strava_webhook(request: Request):
             "average_hr": avg_hr
         }).execute()
 
-        # analytics
         metrics = calculate_metrics(supabase)
         prediction = predict_marathon(metrics)
         recovery = calculate_recovery_status(supabase)
@@ -354,8 +341,6 @@ async def strava_webhook(request: Request):
             prediction
         )
 
-        weekly = generate_weekly_plan(metrics, recovery, fitness, trend)
-
         feedback = (
             f"🏃 Run\n\n"
             f"{activity.get('name')}\n"
@@ -364,8 +349,7 @@ async def strava_webhook(request: Request):
             f"🧠 Fitness {fitness['score']}/100\n"
             f"🧬 Recovery V4 {recovery_v4['score']}/100\n"
             f"{recovery_v4['message']}\n\n"
-            f"{adaptive['workout']}\n\n"
-            + "\n".join(weekly["plan"][:3])
+            f"{adaptive['workout']}"
         )
 
         requests.post(
