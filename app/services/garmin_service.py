@@ -4,7 +4,7 @@ import os
 
 
 # -----------------------------------
-# LOGIN
+# GARMIN LOGIN
 # -----------------------------------
 
 def get_garmin_client():
@@ -12,15 +12,22 @@ def get_garmin_client():
     email = os.getenv("GARMIN_EMAIL")
     password = os.getenv("GARMIN_PASSWORD")
 
-    client = Garmin(email, password)
+    print("GARMIN LOGIN START")
+
+    client = Garmin(
+        email,
+        password
+    )
 
     client.login()
+
+    print("GARMIN LOGIN SUCCESS")
 
     return client
 
 
 # -----------------------------------
-# FETCH TODAY HEALTH
+# FETCH TODAY HEALTH (DEBUG VERSION)
 # -----------------------------------
 
 def fetch_today_health():
@@ -29,89 +36,130 @@ def fetch_today_health():
 
     today = date.today().isoformat()
 
-    # -------------------------------
+    print("TODAY:", today)
+
+    # -----------------------------------
     # SLEEP
-    # -------------------------------
-
-    sleep_data = client.get_sleep_data(today)
-
-    sleep_seconds = (
-        sleep_data
-        .get("dailySleepDTO", {})
-        .get("sleepTime", 0)
-    )
-
-    sleep_hours = round(
-        sleep_seconds / 3600,
-        1
-    )
-
-    # -------------------------------
-    # HRV
-    # -------------------------------
+    # -----------------------------------
 
     try:
 
-        hrv_data = client.get_hrv_data(today)
-
-        hrv = hrv_data.get(
-            "hrvValue"
+        sleep_data = client.get_sleep_data(
+            today
         )
 
-    except:
+        print(
+            "SLEEP RAW:",
+            sleep_data
+        )
 
-        hrv = None
+    except Exception as e:
 
-    # -------------------------------
+        print(
+            "SLEEP ERROR:",
+            e
+        )
+
+        sleep_data = {}
+
+    # -----------------------------------
+    # HRV
+    # -----------------------------------
+
+    try:
+
+        hrv_data = client.get_hrv_data(
+            today
+        )
+
+        print(
+            "HRV RAW:",
+            hrv_data
+        )
+
+    except Exception as e:
+
+        print(
+            "HRV ERROR:",
+            e
+        )
+
+        hrv_data = {}
+
+    # -----------------------------------
     # BODY BATTERY
-    # -------------------------------
+    # -----------------------------------
 
     try:
 
         body_data = (
-            client.get_body_battery(today)
+            client.get_body_battery(
+                today
+            )
         )
 
-        body_battery = (
-            body_data.get("chargedValue")
+        print(
+            "BODY RAW:",
+            body_data
         )
 
-    except:
+    except Exception as e:
 
-        body_battery = None
+        print(
+            "BODY ERROR:",
+            e
+        )
 
-    # -------------------------------
+        body_data = {}
+
+    # -----------------------------------
     # RESTING HR
-    # -------------------------------
+    # -----------------------------------
 
     try:
 
         rhr_data = (
-            client.get_rhr_day(today)
+            client.get_rhr_day(
+                today
+            )
         )
 
-        resting_hr = (
-            rhr_data.get("value")
+        print(
+            "RHR RAW:",
+            rhr_data
         )
 
-    except:
+    except Exception as e:
 
-        resting_hr = None
+        print(
+            "RHR ERROR:",
+            e
+        )
 
-    return {
+        rhr_data = {}
 
-        "sleep_hours":
-        sleep_hours,
+    # -----------------------------------
+    # RETURN PLACEHOLDER DATA
+    # (indtil vi mapper felterne korrekt)
+    # -----------------------------------
 
-        "hrv":
-        hrv,
+    result = {
 
-        "body_battery":
-        body_battery,
+        "sleep_hours": 0,
 
-        "resting_hr":
-        resting_hr
+        "hrv": None,
+
+        "body_battery": None,
+
+        "resting_hr": None
     }
+
+    print(
+        "FINAL HEALTH RESULT:",
+        result
+    )
+
+    return result
 
 
 # -----------------------------------
@@ -124,17 +172,32 @@ def sync_garmin_health_to_supabase(
 
     try:
 
+        print(
+            "GARMIN SYNC START"
+        )
+
         data = fetch_today_health()
 
-        supabase.table(
-            "health_metrics"
-        ).insert(data).execute()
+        print(
+            "INSERTING TO SUPABASE:",
+            data
+        )
+
+        response = (
+            supabase
+            .table("health_metrics")
+            .insert(data)
+            .execute()
+        )
+
+        print(
+            "SUPABASE RESPONSE:",
+            response
+        )
 
         print(
             "GARMIN SYNC SUCCESS"
         )
-
-        print(data)
 
         return data
 
@@ -145,4 +208,6 @@ def sync_garmin_health_to_supabase(
             e
         )
 
-        return None
+        return {
+            "error": str(e)
+        }
