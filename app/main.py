@@ -361,3 +361,26 @@ async def strava_webhook(request: Request):
         )
 
     return {"ok": True}
+    
+    @app.get("/garmin-test")
+def garmin_test():
+
+    try:
+
+        data = sync_garmin_health_to_supabase(
+            supabase
+        )
+
+        return {
+            "status": "success",
+            "data": data
+        }
+
+    except Exception as e:
+
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
