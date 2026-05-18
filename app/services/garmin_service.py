@@ -4,7 +4,7 @@ import os
 
 
 # -----------------------------------
-# GARMIN LOGIN
+# GARMIN CLIENT
 # -----------------------------------
 
 def get_garmin_client():
@@ -12,13 +12,12 @@ def get_garmin_client():
     email = os.getenv("GARMIN_EMAIL")
     password = os.getenv("GARMIN_PASSWORD")
 
+    if not email or not password:
+        raise Exception("Missing GARMIN credentials")
+
     print("GARMIN LOGIN START")
 
-    client = Garmin(
-        email,
-        password
-    )
-
+    client = Garmin(email, password)
     client.login()
 
     print("GARMIN LOGIN SUCCESS")
@@ -27,10 +26,10 @@ def get_garmin_client():
 
 
 # -----------------------------------
-# FETCH TODAY HEALTH
+# FETCH RAW DATA
 # -----------------------------------
 
-def fetch_today_health():
+def fetch_garmin_raw():
 
     client = get_garmin_client()
 
@@ -38,121 +37,89 @@ def fetch_today_health():
 
     print("TODAY:", today)
 
-    # -----------------------------------
-    # FETCH RAW DATA
-    # -----------------------------------
+    sleep = client.get_sleep_data(today)
+    hrv = client.get_hrv_data(today)
+    body = client.get_body_battery(today)
+    rhr = client.get_rhr_day(today)
 
-    sleep_data = client.get_sleep_data(
-        today
-    )
+    return sleep, hrv, body, rhr
 
-    print(
-        "SLEEP RAW:",
-        sleep_data
-    )
 
-    hrv_data = client.get_hrv_data(
-        today
-    )
+# -----------------------------------
+# PARSE SLEEP
+# -----------------------------------
 
-    print(
-        "HRV RAW:",
-        hrv_data
-    )
-
-    body_data = client.get_body_battery(
-        today
-    )
-
-    print(
-        "BODY RAW:",
-        body_data
-    )
-
-    rhr_data = client.get_rhr_day(
-        today
-    )
-
-    print(
-        "RHR RAW:",
-        rhr_data
-    )
-
-    # -----------------------------------
-    # PARSE SLEEP
-    # -----------------------------------
+def parse_sleep(sleep):
 
     try:
 
-        sleep_seconds = (
-            sleep_data
+        seconds = (
+            sleep
             .get("dailySleepDTO", {})
             .get("sleepTimeSeconds", 0)
         )
 
-        sleep_hours = round(
-            sleep_seconds / 3600,
-            1
-        )
+        return round(seconds / 3600, 1)
 
     except Exception as e:
 
-        print(
-            "SLEEP PARSE ERROR:",
-            e
-        )
+        print("SLEEP PARSE ERROR:", e)
 
-        sleep_hours = None
+        return None
 
-    # -----------------------------------
-    # PARSE HRV
-    # -----------------------------------
+
+# -----------------------------------
+# PARSE HRV
+# -----------------------------------
+
+def parse_hrv(hrv):
 
     try:
 
-        hrv = (
-            hrv_data
+        return (
+            hrv
             .get("hrvSummary", {})
             .get("lastNightAvg")
         )
 
     except Exception as e:
 
-        print(
-            "HRV PARSE ERROR:",
-            e
-        )
+        print("HRV PARSE ERROR:", e)
 
-        hrv = None
+        return None
 
-    # -----------------------------------
-    # PARSE BODY BATTERY
-    # -----------------------------------
+
+# -----------------------------------
+# PARSE BODY BATTERY
+# -----------------------------------
+
+def parse_body_battery(body):
 
     try:
 
-        body_battery = (
-            body_data[0]
-            .get("charged")
-        )
+        if isinstance(body, list) and len(body) > 0:
+
+            return body[0].get("charged")
+
+        return None
 
     except Exception as e:
 
-        print(
-            "BODY BATTERY PARSE ERROR:",
-            e
-        )
+        print("BODY BATTERY PARSE ERROR:", e)
 
-        body_battery = None
+        return None
 
-    # -----------------------------------
-    # PARSE RESTING HR
-    # -----------------------------------
+
+# -----------------------------------
+# PARSE RESTING HR
+# -----------------------------------
+
+def parse_resting_hr(rhr):
 
     try:
 
-        resting_hr = (
-            rhr_data
+        return (
+            rhr
             .get("allMetrics", {})
             .get("metricsMap", {})
             .get(
@@ -164,85 +131,90 @@ def fetch_today_health():
 
     except Exception as e:
 
-        print(
-            "RHR PARSE ERROR:",
-            e
-        )
+        print("RHR PARSE ERROR:", e)
 
-        resting_hr = None
+        return None
 
-    # -----------------------------------
-    # FINAL RESULT
-    # -----------------------------------
+
+# -----------------------------------
+# MAIN NORMALIZED OUTPUT
+# -----------------------------------
+
+def get_garmin_health():
+
+    sleep, hrv, body, rhr = fetch_garmin_raw()
 
     result = {
 
         "sleep_hours":
-        sleep_hours,
+            parse_sleep(sleep),
 
         "hrv":
-        hrv,
+            parse_hrv(hrv),
 
         "body_battery":
-        body_battery,
+            parse_body_battery(body),
 
         "resting_hr":
-        resting_hr
+            parse_resting_hr(rhr)
     }
 
-    print(
-        "FINAL HEALTH RESULT:",
-        result
-    )
+    print("GARMIN FINAL RESULT:", result)
 
     return result
 
 
 # -----------------------------------
-# SYNC TO SUPABASE
+# SYNC TO SUPABASE (SAFE TYPES)
 # -----------------------------------
 
-def sync_garmin_health_to_supabase(
-    supabase
-):
+def sync_garmin_health_to_supabase(supabase):
 
     try:
 
-        print(
-            "GARMIN SYNC START"
-        )
+        print("GARMIN SYNC START")
 
-        data = fetch_today_health()
+        data = get_garmin_health()
 
-        print(
-            "INSERTING TO SUPABASE:",
-            data
-        )
+        # -----------------------------------
+        # TYPE SAFETY LAYER (IMPORTANT)
+        # -----------------------------------
+
+        cleaned = {
+
+            "sleep_hours":
+                float(data["sleep_hours"])
+                if data["sleep_hours"] is not None else None,
+
+            "hrv":
+                int(float(data["hrv"]))
+                if data["hrv"] is not None else None,
+
+            "body_battery":
+                int(float(data["body_battery"]))
+                if data["body_battery"] is not None else None,
+
+            "resting_hr":
+                int(float(data["resting_hr"]))
+                if data["resting_hr"] is not None else None
+        }
+
+        print("INSERT CLEAN DATA:", cleaned)
 
         response = (
             supabase
             .table("health_metrics")
-            .insert(data)
+            .insert(cleaned)
             .execute()
         )
 
-        print(
-            "SUPABASE RESPONSE:",
-            response
-        )
+        print("SUPABASE RESPONSE:", response)
 
-        print(
-            "GARMIN SYNC SUCCESS"
-        )
-
-        return data
+        return cleaned
 
     except Exception as e:
 
-        print(
-            "GARMIN SYNC ERROR:",
-            e
-        )
+        print("GARMIN SYNC ERROR:", e)
 
         return {
             "error": str(e)
