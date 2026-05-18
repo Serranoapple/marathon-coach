@@ -52,33 +52,16 @@ print("MAIN.PY LOADED")
 app = FastAPI()
 
 # -----------------------------------
-# ENV VARIABLES
+# ENV
 # -----------------------------------
 
-TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN"
-)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-TELEGRAM_CHAT_ID = os.getenv(
-    "TELEGRAM_CHAT_ID"
-)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-SUPABASE_URL = os.getenv(
-    "SUPABASE_URL"
-)
-
-SUPABASE_KEY = os.getenv(
-    "SUPABASE_KEY"
-)
-
-# -----------------------------------
-# SUPABASE
-# -----------------------------------
-
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # -----------------------------------
 # SCHEDULER
@@ -86,21 +69,15 @@ supabase = create_client(
 
 scheduler = BackgroundScheduler()
 
-# Daily briefing
 scheduler.add_job(
-    lambda: send_daily_briefing(
-        supabase
-    ),
+    lambda: send_daily_briefing(supabase),
     "cron",
     hour=5,
     minute=0
 )
 
-# Garmin sync
 scheduler.add_job(
-    lambda: sync_garmin_health_to_supabase(
-        supabase
-    ),
+    lambda: sync_garmin_health_to_supabase(supabase),
     "cron",
     hour=6,
     minute=0
@@ -116,10 +93,7 @@ print("SCHEDULER STARTED")
 
 @app.get("/")
 def root():
-
-    return {
-        "status": "running"
-    }
+    return {"status": "running"}
 
 # -----------------------------------
 # GARMIN TEST
@@ -130,40 +104,26 @@ def garmin_test():
 
     try:
 
-        data = sync_garmin_health_to_supabase(
-            supabase
-        )
+        data = sync_garmin_health_to_supabase(supabase)
 
         readiness = calculate_readiness_score(
-            sleep_hours=data.get(
-                "sleep_hours"
-            ),
-            hrv=data.get(
-                "hrv"
-            ),
-            body_battery=data.get(
-                "body_battery"
-            ),
-            resting_hr=data.get(
-                "resting_hr"
-            )
+            sleep_hours=data.get("sleep_hours"),
+            hrv=data.get("hrv"),
+            body_battery=data.get("body_battery"),
+            resting_hr=data.get("resting_hr"),
+            weight=data.get("weight")
         )
 
         return {
-
             "status": "success",
-
-            "health": data,
-
+            "data": data,
             "recovery": readiness
         }
 
     except Exception as e:
 
         return {
-
             "status": "error",
-
             "message": str(e)
         }
 
@@ -172,270 +132,158 @@ def garmin_test():
 # -----------------------------------
 
 @app.post("/telegram")
-async def telegram_webhook(
-    request: Request
-):
+async def telegram_webhook(request: Request):
 
     data = await request.json()
 
-    print(
-        "TELEGRAM EVENT:",
-        data
-    )
-
-    message = data.get(
-        "message",
-        {}
-    )
-
-    text = message.get(
-        "text",
-        ""
-    )
-
-    chat_id = (
-        message
-        .get("chat", {})
-        .get("id")
-    )
+    message = data.get("message", {})
+    text = (message.get("text", "") or "").strip().lower()
+    chat_id = message.get("chat", {}).get("id")
 
     if not chat_id:
-
-        return {
-            "ok": True
-        }
+        return {"ok": True}
 
     # -----------------------------------
-    # LOAD METRICS
+    # LOAD DATA
     # -----------------------------------
 
-    metrics = calculate_metrics(
-        supabase
-    )
+    metrics = calculate_metrics(supabase)
+    prediction = predict_marathon(metrics)
+    recovery = calculate_recovery_status(supabase)
+    trend = calculate_trend_analysis(supabase)
+    fitness = calculate_fitness_score(metrics, recovery, trend)
 
-    prediction = predict_marathon(
-        metrics
-    )
+    health = get_latest_health_metrics(supabase) or {}
 
-    recovery = (
-        calculate_recovery_status(
-            supabase
-        )
-    )
-
-    trend = calculate_trend_analysis(
-        supabase
-    )
-
-    fitness = calculate_fitness_score(
-        metrics,
+    recovery_v4 = calculate_recovery_intelligence_v4(
+        health,
         recovery,
+        fitness,
         trend
     )
 
-    health = get_latest_health_metrics(
-        supabase
-    ) or {}
-
-    recovery_v4 = (
-        calculate_recovery_intelligence_v4(
-            health,
-            recovery,
-            fitness,
-            trend
-        )
-    )
-
     readiness = calculate_readiness_score(
-        sleep_hours=health.get(
-            "sleep_hours"
-        ),
-        hrv=health.get(
-            "hrv"
-        ),
-        body_battery=health.get(
-            "body_battery"
-        ),
-        resting_hr=health.get(
-            "resting_hr"
-        )
+        sleep_hours=health.get("sleep_hours"),
+        hrv=health.get("hrv"),
+        body_battery=health.get("body_battery"),
+        resting_hr=health.get("resting_hr"),
+        weight=health.get("weight")
     )
 
     response_text = None
 
     # -----------------------------------
-    # STATUS
+    # COMMANDS
     # -----------------------------------
 
     if text == "/status":
 
         response_text = (
             "📊 Marathon Coach\n\n"
-
-            f"Km this week: "
-            f"{metrics['weekly_distance']}\n"
-
-            f"Runs: "
-            f"{metrics['run_count']}\n"
-
-            f"Average pace: "
-            f"{metrics['average_pace']}\n\n"
-
-            f"🏁 Readiness: "
-            f"{prediction['readiness_score']}/100\n"
-
-            f"🧠 Fitness: "
-            f"{fitness['score']}/100\n"
-
-            f"🧬 Recovery V4: "
-            f"{recovery_v4['score']}/100\n"
-
-            f"⚡ Recovery Engine: "
-            f"{readiness['score']}/100\n"
-
-            f"📈 Status: "
-            f"{readiness['status']}"
+            f"Km this week: {metrics['weekly_distance']}\n"
+            f"Runs: {metrics['run_count']}\n"
+            f"Average pace: {metrics['average_pace']}\n\n"
+            f"🏁 Readiness: {prediction['readiness_score']}/100\n"
+            f"🧠 Fitness: {fitness['score']}/100\n"
+            f"🧬 Recovery V4: {recovery_v4['score']}/100\n"
+            f"⚡ Recovery Engine: {readiness['score']}/100\n\n"
+            f"📈 Status: {readiness['status']}"
         )
-
-    # -----------------------------------
-    # HEALTH
-    # -----------------------------------
 
     elif text == "/health":
 
-        if not health:
+        response_text = (
+            "🧬 Garmin Health\n\n"
+            f"😴 Sleep: {health.get('sleep_hours')} h\n"
+            f"📉 HRV: {health.get('hrv')}\n"
+            f"🔋 Body Battery: {health.get('body_battery')}\n"
+            f"❤️ Resting HR: {health.get('resting_hr')}\n"
+            f"⚖️ Weight: {health.get('weight')}\n\n"
+            f"⚡ Readiness: {readiness['score']}/100\n"
+            f"📈 Status: {readiness['status']}"
+        )
 
-            response_text = (
-                "No health data yet."
-            )
+    elif text == "/plan":
 
-        else:
+        plan = generate_training_recommendation(metrics, readiness, recovery_v4)
+        response_text = f"🏃 Training Plan\n\n{plan}"
 
-            response_text = (
-                "🧬 Garmin Health\n\n"
+    elif text == "/today":
 
-                f"😴 Sleep: "
-                f"{health.get('sleep_hours')} h\n"
+        plan = generate_daily_adaptive_plan(metrics, readiness, recovery_v4)
+        response_text = f"🎯 Today's Plan\n\n{plan}"
 
-                f"📉 HRV: "
-                f"{health.get('hrv')}\n"
+    elif text == "/week":
 
-                f"🔋 Body Battery: "
-                f"{health.get('body_battery')}\n"
+        plan = generate_weekly_plan(metrics, readiness, recovery_v4)
+        response_text = f"📅 Weekly Plan\n\n{plan}"
 
-                f"❤️ Resting HR: "
-                f"{health.get('resting_hr')}\n\n"
+    elif text == "/recovery":
 
-                f"⚡ Readiness Score: "
-                f"{readiness['score']}/100\n"
-
-                f"📈 Status: "
-                f"{readiness['status']}"
-            )
-
-    # -----------------------------------
-    # DEFAULT
-    # -----------------------------------
+        response_text = (
+            "🧬 Recovery Engine\n\n"
+            f"Score: {readiness['score']}/100\n"
+            f"Status: {readiness['status']}\n\n"
+            f"HRV: {health.get('hrv')}\n"
+            f"Sleep: {health.get('sleep_hours')}h\n"
+            f"Body Battery: {health.get('body_battery')}\n"
+            f"Resting HR: {health.get('resting_hr')}\n"
+            f"Weight: {health.get('weight')}"
+        )
 
     else:
 
         response_text = (
-            "Commands:\n\n"
+            "📌 Commands:\n\n"
             "/status\n"
-            "/health"
+            "/health\n"
+            "/plan\n"
+            "/today\n"
+            "/week\n"
+            "/recovery"
         )
 
     # -----------------------------------
     # SEND TELEGRAM
     # -----------------------------------
 
-    try:
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": response_text
+        }
+    )
 
-        requests.post(
-            f"https://api.telegram.org/bot"
-            f"{TELEGRAM_BOT_TOKEN}"
-            f"/sendMessage",
-
-            json={
-                "chat_id": chat_id,
-                "text": response_text
-            }
-        )
-
-        print(
-            "TELEGRAM SENT"
-        )
-
-    except Exception as e:
-
-        print(
-            "TELEGRAM ERROR:",
-            e
-        )
-
-    return {
-        "ok": True
-    }
+    return {"ok": True}
 
 # -----------------------------------
 # STRAVA WEBHOOK
 # -----------------------------------
 
-@app.api_route(
-    "/strava-webhook",
-    methods=["GET", "POST"]
-)
-
-async def strava_webhook(
-    request: Request
-):
+@app.api_route("/strava-webhook", methods=["GET", "POST"])
+async def strava_webhook(request: Request):
 
     if request.method == "GET":
 
-        params = dict(
-            request.query_params
-        )
+        params = dict(request.query_params)
 
         if "hub.challenge" in params:
+            return {"hub.challenge": params["hub.challenge"]}
 
-            return {
-                "hub.challenge":
-                params["hub.challenge"]
-            }
-
-        return {
-            "status": "ok"
-        }
+        return {"status": "ok"}
 
     data = await request.json()
 
-    print(
-        "STRAVA EVENT:",
-        data
-    )
-
     if (
-        data.get("object_type")
-        == "activity"
-
-        and
-
-        data.get("aspect_type")
-        == "create"
+        data.get("object_type") == "activity"
+        and data.get("aspect_type") == "create"
     ):
 
-        activity_id = data.get(
-            "object_id"
-        )
+        activity_id = data.get("object_id")
+        access_token = refresh_access_token()
 
-        access_token = (
-            refresh_access_token()
-        )
-
-        headers = {
-            "Authorization":
-            f"Bearer {access_token}"
-        }
+        headers = {"Authorization": f"Bearer {access_token}"}
 
         activity = requests.get(
             f"https://www.strava.com/api/v3/activities/{activity_id}",
@@ -443,70 +291,27 @@ async def strava_webhook(
         ).json()
 
         if activity.get("type") != "Run":
+            return {"ok": True}
 
-            return {
-                "ok": True
-            }
+        distance_km = round(activity.get("distance", 0) / 1000, 2)
 
-        distance_km = round(
-            activity.get(
-                "distance",
-                0
-            ) / 1000,
-            2
-        )
+        moving_time = activity.get("moving_time", 0)
 
-        moving_time = activity.get(
-            "moving_time",
-            0
-        )
-
-        avg_hr = activity.get(
-            "average_heartrate"
-        )
+        avg_hr = activity.get("average_heartrate")
 
         pace = "N/A"
 
         if distance_km > 0:
+            pace_sec = moving_time / distance_km
+            pace = f"{int(pace_sec//60)}:{int(pace_sec%60):02d}/km"
 
-            pace_sec = (
-                moving_time /
-                distance_km
-            )
-
-            pace = (
-                f"{int(pace_sec//60)}:"
-                f"{int(pace_sec%60):02d}/km"
-            )
-
-        supabase.table(
-            "runs"
-        ).insert({
-
-            "id":
-            activity_id,
-
-            "name":
-            activity.get("name"),
-
-            "distance_km":
-            distance_km,
-
-            "moving_time":
-            moving_time,
-
-            "pace":
-            pace,
-
-            "average_hr":
-            avg_hr
-
+        supabase.table("runs").insert({
+            "id": activity_id,
+            "name": activity.get("name"),
+            "distance_km": distance_km,
+            "moving_time": moving_time,
+            "pace": pace,
+            "average_hr": avg_hr
         }).execute()
 
-        print(
-            "RUN SAVED"
-        )
-
-    return {
-        "ok": True
-    }
+    return {"ok": True}
