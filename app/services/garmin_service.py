@@ -27,7 +27,7 @@ def get_garmin_client():
 
 
 # -----------------------------------
-# FETCH TODAY HEALTH (DEBUG VERSION)
+# FETCH TODAY HEALTH
 # -----------------------------------
 
 def fetch_today_health():
@@ -39,119 +39,155 @@ def fetch_today_health():
     print("TODAY:", today)
 
     # -----------------------------------
-    # SLEEP
+    # FETCH RAW DATA
+    # -----------------------------------
+
+    sleep_data = client.get_sleep_data(
+        today
+    )
+
+    print(
+        "SLEEP RAW:",
+        sleep_data
+    )
+
+    hrv_data = client.get_hrv_data(
+        today
+    )
+
+    print(
+        "HRV RAW:",
+        hrv_data
+    )
+
+    body_data = client.get_body_battery(
+        today
+    )
+
+    print(
+        "BODY RAW:",
+        body_data
+    )
+
+    rhr_data = client.get_rhr_day(
+        today
+    )
+
+    print(
+        "RHR RAW:",
+        rhr_data
+    )
+
+    # -----------------------------------
+    # PARSE SLEEP
     # -----------------------------------
 
     try:
 
-        sleep_data = client.get_sleep_data(
-            today
-        )
-
-        print(
-            "SLEEP RAW:",
+        sleep_seconds = (
             sleep_data
+            .get("dailySleepDTO", {})
+            .get("sleepTimeSeconds", 0)
+        )
+
+        sleep_hours = round(
+            sleep_seconds / 3600,
+            1
         )
 
     except Exception as e:
 
         print(
-            "SLEEP ERROR:",
+            "SLEEP PARSE ERROR:",
             e
         )
 
-        sleep_data = {}
+        sleep_hours = None
 
     # -----------------------------------
-    # HRV
+    # PARSE HRV
     # -----------------------------------
 
     try:
 
-        hrv_data = client.get_hrv_data(
-            today
-        )
-
-        print(
-            "HRV RAW:",
+        hrv = (
             hrv_data
+            .get("hrvSummary", {})
+            .get("lastNightAvg")
         )
 
     except Exception as e:
 
         print(
-            "HRV ERROR:",
+            "HRV PARSE ERROR:",
             e
         )
 
-        hrv_data = {}
+        hrv = None
 
     # -----------------------------------
-    # BODY BATTERY
+    # PARSE BODY BATTERY
     # -----------------------------------
 
     try:
 
-        body_data = (
-            client.get_body_battery(
-                today
-            )
-        )
-
-        print(
-            "BODY RAW:",
-            body_data
+        body_battery = (
+            body_data[0]
+            .get("charged")
         )
 
     except Exception as e:
 
         print(
-            "BODY ERROR:",
+            "BODY BATTERY PARSE ERROR:",
             e
         )
 
-        body_data = {}
+        body_battery = None
 
     # -----------------------------------
-    # RESTING HR
+    # PARSE RESTING HR
     # -----------------------------------
 
     try:
 
-        rhr_data = (
-            client.get_rhr_day(
-                today
-            )
-        )
-
-        print(
-            "RHR RAW:",
+        resting_hr = (
             rhr_data
+            .get("allMetrics", {})
+            .get("metricsMap", {})
+            .get(
+                "WELLNESS_RESTING_HEART_RATE",
+                [{}]
+            )[0]
+            .get("value")
         )
 
     except Exception as e:
 
         print(
-            "RHR ERROR:",
+            "RHR PARSE ERROR:",
             e
         )
 
-        rhr_data = {}
+        resting_hr = None
 
     # -----------------------------------
-    # RETURN PLACEHOLDER DATA
-    # (indtil vi mapper felterne korrekt)
+    # FINAL RESULT
     # -----------------------------------
 
     result = {
 
-        "sleep_hours": 0,
+        "sleep_hours":
+        sleep_hours,
 
-        "hrv": None,
+        "hrv":
+        hrv,
 
-        "body_battery": None,
+        "body_battery":
+        body_battery,
 
-        "resting_hr": None
+        "resting_hr":
+        resting_hr
     }
 
     print(
