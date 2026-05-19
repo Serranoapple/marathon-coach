@@ -1,74 +1,55 @@
-def generate_training_recommendation(
+     def generate_weekly_plan(
     metrics,
-    prediction
+    readiness,
+    recovery_v4
 ):
 
-    weekly_distance = (
-        metrics["weekly_distance"]
+    readiness_score = readiness.get(
+        "score",
+        0
     )
 
-    fatigue = (
-        metrics["fatigue_warning"]
+    weekly_distance = metrics.get(
+        "weekly_distance",
+        0
     )
 
-    readiness = (
-        prediction["readiness_score"]
-    )
-
-    # -----------------------------------
-    # FATIGUE PRIORITY
-    # -----------------------------------
-
-    if fatigue:
+    if readiness_score < 40:
 
         return (
-            "⚠ Høj belastning registreret.\n"
-            "Anbefaling: restitutionsdag "
-            "eller meget roligt Zone 2 pas."
+            "Recovery Week\n\n"
+
+            "Mon: Rest\n"
+            "Tue: 5 km easy\n"
+            "Wed: Mobility\n"
+            "Thu: 6 km easy\n"
+            "Fri: Rest\n"
+            "Sat: 8 km easy\n"
+            "Sun: Walk"
         )
 
-    # -----------------------------------
-    # LOW TRAINING LOAD
-    # -----------------------------------
-
-    if weekly_distance < 15:
+    if weekly_distance < 20:
 
         return (
-            "🏃 Lav ugentlig volumen.\n"
-            "Anbefaling: 5-8 km roligt løb "
-            "for at bygge base."
+            "Base Building Week\n\n"
+
+            "Mon: Rest\n"
+            "Tue: 8 km easy\n"
+            "Wed: Strength\n"
+            "Thu: 10 km aerobic\n"
+            "Fri: Rest\n"
+            "Sat: 14 km long run\n"
+            "Sun: Recovery jog"
         )
-
-    # -----------------------------------
-    # BUILDING PHASE
-    # -----------------------------------
-
-    if readiness < 40:
-
-        return (
-            "📈 Baseopbygning i fokus.\n"
-            "Anbefaling: roligt Zone 2 "
-            "med fokus på kontinuitet."
-        )
-
-    # -----------------------------------
-    # IMPROVING FITNESS
-    # -----------------------------------
-
-    if readiness < 70:
-
-        return (
-            "🔥 Formen udvikler sig.\n"
-            "Anbefaling: tempo-pas "
-            "eller længere roligt pas."
-        )
-
-    # -----------------------------------
-    # HIGH READINESS
-    # -----------------------------------
 
     return (
-        "🏁 Høj readiness.\n"
-        "Anbefaling: marathon-specifikt "
-        "tempo eller langtur."
+        "Performance Week\n\n"
+
+        "Mon: Recovery\n"
+        "Tue: Intervals\n"
+        "Wed: Easy run\n"
+        "Thu: Tempo\n"
+        "Fri: Rest\n"
+        "Sat: Long run\n"
+        "Sun: Recovery"
     )
