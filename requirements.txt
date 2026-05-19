@@ -6,3 +6,4 @@ supabase
 apscheduler
 garminconnect
 flask
+gunicorn
