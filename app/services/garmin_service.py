@@ -1,184 +1,160 @@
-from garminconnect import Garmin
+import logging
 from datetime import datetime
-import os
+
+from app.engines.recovery_engine import calculate_readiness_score
+from app.engines.fatigue_engine import calculate_fatigue_score
 
 
-def sync_garmin_health_to_supabase(supabase):
+# --------------------------------------------------
+# SAFE VALUE HELPER
+# --------------------------------------------------
 
-    print("🚀 START GARMIN SYNC")
+def safe_float(value):
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
 
-    email = os.getenv("GARMIN_EMAIL")
-    password = os.getenv("GARMIN_PASSWORD")
 
-    client = Garmin(email, password)
-    client.login()
+# --------------------------------------------------
+# HRV PARSER (robust Garmin format)
+# --------------------------------------------------
 
-    today = datetime.utcnow().date()
+def extract_hrv(hrv_raw):
+    try:
+        return hrv_raw.get("hrvSummary", {}).get("weeklyAvg")
+    except Exception:
+        return None
 
-    # --------------------------------------------------
-    # SLEEP
-    # --------------------------------------------------
 
-    sleep_hours = None
+# --------------------------------------------------
+# RESTING HR SAFE EXTRACTION
+# --------------------------------------------------
+
+def extract_resting_hr(data):
+    try:
+        return data.get("restingHeartRate") or data.get("resting_hr")
+    except Exception:
+        return None
+
+
+# --------------------------------------------------
+# WEIGHT SAFE EXTRACTION
+# --------------------------------------------------
+
+def extract_weight(weight_raw):
+    try:
+        if not weight_raw:
+            return None
+
+        avg = weight_raw.get("totalAverage", {})
+        return safe_float(avg.get("weight"))
+    except Exception:
+        return None
+
+
+# --------------------------------------------------
+# MAIN SYNC FUNCTION
+# --------------------------------------------------
+
+def sync_garmin_health_to_supabase(supabase=None):
+    """
+    Fetch + normalize Garmin data + compute recovery + fatigue + store history
+    """
 
     try:
+        # --------------------------------------------------
+        # PLACEHOLDER: REPLACE WITH YOUR GARMIN CLIENT
+        # --------------------------------------------------
+        from app.services.garmin_client import GarminClient
 
-        sleep_data = client.get_sleep_data(today.isoformat())
+        client = GarminClient()
 
-        print("SLEEP RAW:", sleep_data)
+        sleep_data = client.get_sleep_data()
+        hrv_data = client.get_hrv_data()
+        body_battery = client.get_body_battery()
+        weight_data = client.get_weight_data()
+        rhr_data = client.get_rhr_data()
 
-        sleep_sec = (
-            sleep_data
-            .get("dailySleepDTO", {})
-            .get("sleepTimeSeconds")
+        # --------------------------------------------------
+        # NORMALIZE VALUES
+        # --------------------------------------------------
+
+        sleep_hours = safe_float(sleep_data.get("sleep_hours"))
+        hrv = extract_hrv(hrv_data)
+        body_battery_val = safe_float(body_battery)
+        resting_hr = extract_resting_hr(rhr_data)
+        weight = extract_weight(weight_data)
+
+        # --------------------------------------------------
+        # ENGINE INPUT
+        # --------------------------------------------------
+
+        recovery = calculate_readiness_score(
+            sleep_hours=sleep_hours,
+            hrv=hrv,
+            body_battery=body_battery_val,
+            resting_hr=resting_hr,
+            weight=weight
         )
 
-        if sleep_sec:
-
-            sleep_hours = round(sleep_sec / 3600, 2)
-
-    except Exception as e:
-
-        print("SLEEP ERROR:", e)
-
-    # --------------------------------------------------
-    # HRV
-    # --------------------------------------------------
-
-    hrv = None
-
-    try:
-
-        hrv_data = client.get_hrv_data(today.isoformat())
-
-        print("HRV RAW:", hrv_data)
-
-        hrv = (
-            hrv_data
-            .get("hrvSummary", {})
-            .get("lastNightAvg")
+        fatigue = calculate_fatigue_score(
+            sleep_hours=sleep_hours,
+            hrv=hrv,
+            body_battery=body_battery_val,
+            resting_hr=resting_hr,
+            weight=weight
         )
 
-        if hrv is not None:
+        # --------------------------------------------------
+        # SAFE INSERT TO SUPABASE
+        # --------------------------------------------------
 
-            hrv = int(hrv)
+        if supabase:
+            try:
+                supabase.table("daily_metrics").insert({
+                    "created_at": datetime.utcnow().isoformat(),
 
-    except Exception as e:
+                    "sleep_hours": sleep_hours,
+                    "hrv": hrv,
+                    "body_battery": body_battery_val,
+                    "resting_hr": resting_hr,
+                    "weight": weight,
 
-        print("HRV ERROR:", e)
+                    "recovery_score": recovery.get("score"),
+                    "fatigue_score": fatigue.get("score"),
+                }).execute()
 
-    # --------------------------------------------------
-    # BODY BATTERY
-    # --------------------------------------------------
+            except Exception as db_err:
+                logging.error(f"Supabase insert error: {db_err}")
 
-    body_battery = None
+        # --------------------------------------------------
+        # RETURN CLEAN RESPONSE
+        # --------------------------------------------------
 
-    try:
-
-        body_data = client.get_body_battery(today.isoformat())
-
-        print("BODY RAW:", body_data)
-
-        if isinstance(body_data, list) and len(body_data) > 0:
-
-            latest = body_data[-1]
-
-            body_battery = latest.get("charged")
-
-            if body_battery is not None:
-
-                body_battery = int(body_battery)
-
-    except Exception as e:
-
-        print("BODY BATTERY ERROR:", e)
-
-    # --------------------------------------------------
-    # RESTING HEART RATE
-    # --------------------------------------------------
-
-    resting_hr = None
-
-    try:
-
-        summary = client.get_stats(today.isoformat())
-
-        print("SUMMARY RAW:", summary)
-
-        resting_hr = summary.get("restingHeartRate")
-
-        if resting_hr is not None:
-
-            resting_hr = int(resting_hr)
-
-    except Exception as e:
-
-        print("RHR ERROR:", e)
-
-    # --------------------------------------------------
-    # WEIGHT
-    # --------------------------------------------------
-
-    weight = None
-
-    try:
-
-        weight_data = client.get_body_composition(today.isoformat())
-
-        print("WEIGHT RAW:", weight_data)
-
-        date_weight_list = weight_data.get("dateWeightList", [])
-
-        if len(date_weight_list) > 0:
-
-            latest = date_weight_list[-1]
-
-            raw_weight = latest.get("weight")
-
-            if raw_weight:
-
-                weight = round(raw_weight / 1000, 1)
-
-    except Exception as e:
-
-        print("WEIGHT ERROR:", e)
-
-    # --------------------------------------------------
-    # SAVE TO SUPABASE
-    # --------------------------------------------------
-
-    try:
-
-        payload = {
-
-            "date": today.isoformat(),
+        return {
             "sleep_hours": sleep_hours,
             "hrv": hrv,
-            "body_battery": body_battery,
+            "body_battery": body_battery_val,
             "resting_hr": resting_hr,
-            "weight": weight
+            "weight": weight,
 
+            "recovery": recovery,
+            "fatigue": fatigue
         }
 
-        print("SUPABASE PAYLOAD:", payload)
-
-        supabase.table("health_metrics").upsert(payload).execute()
-
-        print("✅ GARMIN SYNC COMPLETE")
-
     except Exception as e:
+        logging.error(f"Garmin sync failed: {e}")
 
-        print("SUPABASE ERROR:", e)
+        return {
+            "sleep_hours": None,
+            "hrv": None,
+            "body_battery": None,
+            "resting_hr": None,
+            "weight": None,
 
-    # --------------------------------------------------
-    # RETURN TEST DATA
-    # --------------------------------------------------
-
-    return {
-
-        "sleep_hours": sleep_hours,
-        "hrv": hrv,
-        "body_battery": body_battery,
-        "resting_hr": resting_hr,
-        "weight": weight
-    }
+            "recovery": {"score": 0, "status": "ERROR"},
+            "fatigue": {"score": 0, "status": "ERROR"}
+        }
