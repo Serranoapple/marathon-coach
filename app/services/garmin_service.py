@@ -5,7 +5,7 @@ import os
 
 def sync_garmin_health_to_supabase(supabase):
 
-    print("STARTING GARMIN SYNC")
+    print("🚀 START GARMIN SYNC")
 
     email = os.getenv("GARMIN_EMAIL")
     password = os.getenv("GARMIN_PASSWORD")
@@ -23,24 +23,19 @@ def sync_garmin_health_to_supabase(supabase):
 
     try:
 
-        sleep_data = client.get_sleep_data(
-            today.isoformat()
-        )
+        sleep_data = client.get_sleep_data(today.isoformat())
 
         print("SLEEP RAW:", sleep_data)
 
-        sleep_ms = (
+        sleep_sec = (
             sleep_data
             .get("dailySleepDTO", {})
             .get("sleepTimeSeconds")
         )
 
-        if sleep_ms:
+        if sleep_sec:
 
-            sleep_hours = round(
-                sleep_ms / 3600,
-                2
-            )
+            sleep_hours = round(sleep_sec / 3600, 2)
 
     except Exception as e:
 
@@ -54,9 +49,7 @@ def sync_garmin_health_to_supabase(supabase):
 
     try:
 
-        hrv_data = client.get_hrv_data(
-            today.isoformat()
-        )
+        hrv_data = client.get_hrv_data(today.isoformat())
 
         print("HRV RAW:", hrv_data)
 
@@ -78,33 +71,27 @@ def sync_garmin_health_to_supabase(supabase):
 
     try:
 
-        body_data = client.get_body_battery(
-            today.isoformat()
-        )
+        body_data = client.get_body_battery(today.isoformat())
 
         print("BODY RAW:", body_data)
 
         if isinstance(body_data, list) and len(body_data) > 0:
 
-            latest = body_data[-1]
-
-            body_battery = latest.get("charged")
+            body_battery = body_data[-1].get("charged")
 
     except Exception as e:
 
         print("BODY BATTERY ERROR:", e)
 
     # --------------------------------------------------
-    # RESTING HEART RATE
+    # RESTING HEART RATE (FIXED)
     # --------------------------------------------------
 
     resting_hr = None
 
     try:
 
-        rhr_data = client.get_rhr_day_values(
-            today.isoformat()
-        )
+        rhr_data = client.get_rhr_day_values(today.isoformat())
 
         print("RHR RAW:", rhr_data)
 
@@ -124,22 +111,20 @@ def sync_garmin_health_to_supabase(supabase):
         print("RHR ERROR:", e)
 
     # --------------------------------------------------
-    # WEIGHT (FIXED)
+    # WEIGHT (ROBUST + FALLBACK)
     # --------------------------------------------------
 
     weight = None
 
+    # PRIMARY SOURCE
     try:
 
-        weight_data = client.get_body_composition(
-            today.isoformat()
-        )
+        weight_data = client.get_body_composition(today.isoformat())
 
         print("WEIGHT RAW:", weight_data)
 
         if (
-            weight_data
-            and isinstance(weight_data, list)
+            isinstance(weight_data, list)
             and len(weight_data) > 0
         ):
 
@@ -147,17 +132,32 @@ def sync_garmin_health_to_supabase(supabase):
 
             raw_weight = latest.get("weight")
 
-            if raw_weight is not None:
+            if raw_weight:
 
-                # Garmin returns grams → kg
-                weight = round(
-                    raw_weight / 1000,
-                    1
-                )
+                weight = round(raw_weight / 1000, 1)
 
     except Exception as e:
 
-        print("WEIGHT ERROR:", e)
+        print("WEIGHT PRIMARY ERROR:", e)
+
+    # FALLBACK SOURCE (PROFILE)
+    if weight is None:
+
+        try:
+
+            profile = client.get_user_summary()
+
+            print("PROFILE RAW:", profile)
+
+            fallback_weight = profile.get("weight")
+
+            if fallback_weight:
+
+                weight = round(float(fallback_weight), 1)
+
+        except Exception as e:
+
+            print("WEIGHT FALLBACK ERROR:", e)
 
     # --------------------------------------------------
     # UPSERT SUPABASE
@@ -177,7 +177,7 @@ def sync_garmin_health_to_supabase(supabase):
 
         }).execute()
 
-        print("GARMIN SYNC COMPLETE")
+        print("✅ GARMIN SYNC COMPLETE")
 
     except Exception as e:
 
