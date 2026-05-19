@@ -1,98 +1,55 @@
 def generate_weekly_plan(
     metrics,
-    recovery,
-    fitness,
-    trend
+    readiness,
+    recovery_v4
 ):
 
-    weekly_km = metrics["weekly_distance"]
-    load_ratio = recovery["load_ratio"]
-    fitness_score = fitness["score"]
-    trend_state = trend["trend"]
+    readiness_score = readiness.get(
+        "score",
+        0
+    )
 
-    plan = []
+    weekly_distance = metrics.get(
+        "weekly_distance",
+        0
+    )
 
-    # -----------------------------------
-    # LOAD ADJUSTMENT
-    # -----------------------------------
+    if readiness_score < 40:
 
-    if load_ratio > 1.5:
-        intensity = "low"
-    elif load_ratio > 1.2:
-        intensity = "moderate"
-    else:
-        intensity = "normal"
+        return (
+            "Recovery Week\n\n"
 
-    # -----------------------------------
-    # FITNESS ADJUSTMENT
-    # -----------------------------------
-
-    if fitness_score > 75:
-        volume_factor = 1.2
-    elif fitness_score > 50:
-        volume_factor = 1.0
-    else:
-        volume_factor = 0.8
-
-    base_long_run = int(12 * volume_factor)
-
-    # -----------------------------------
-    # PLAN STRUCTURE
-    # -----------------------------------
-
-    if intensity == "low":
-
-        plan = [
-            "Mandag: Hvile",
-            "Tirsdag: 5 km meget let",
-            "Onsdag: hvile",
-            "Torsdag: 5 km let",
-            "Fredag: hvile",
-            f"Lørdag: {base_long_run} km rolig tur",
-            "Søndag: recovery jog 4 km"
-        ]
-
-    elif intensity == "moderate":
-
-        plan = [
-            "Mandag: hvile",
-            "Tirsdag: 6 km let",
-            "Onsdag: interval 4x3 min",
-            "Torsdag: 5 km recovery",
-            "Fredag: hvile",
-            f"Lørdag: {base_long_run + 2} km lang tur",
-            "Søndag: 5 km rolig"
-        ]
-
-    else:
-
-        plan = [
-            "Mandag: hvile",
-            "Tirsdag: 7 km let",
-            "Onsdag: interval 6x3 min",
-            "Torsdag: 6 km rolig",
-            "Fredag: tempo 5 km",
-            f"Lørdag: {base_long_run + 4} km lang tur",
-            "Søndag: 6 km recovery"
-        ]
-
-    # -----------------------------------
-    # TREND MODIFIER
-    # -----------------------------------
-
-    if trend_state == "declining":
-
-        plan.append(
-            "⚠ Reducer intensitet hvis træthed"
+            "Mon: Rest\n"
+            "Tue: 5 km easy\n"
+            "Wed: Mobility\n"
+            "Thu: 6 km easy\n"
+            "Fri: Rest\n"
+            "Sat: 8 km easy\n"
+            "Sun: Walk"
         )
 
-    if trend_state == "improving":
+    if weekly_distance < 20:
 
-        plan.append(
-            "🚀 God progression – hold struktur"
+        return (
+            "Base Building Week\n\n"
+
+            "Mon: Rest\n"
+            "Tue: 8 km easy\n"
+            "Wed: Strength\n"
+            "Thu: 10 km aerobic\n"
+            "Fri: Rest\n"
+            "Sat: 14 km long run\n"
+            "Sun: Recovery jog"
         )
 
-    return {
-        "intensity": intensity,
-        "plan": plan
-    }
+    return (
+        "Performance Week\n\n"
+
+        "Mon: Recovery\n"
+        "Tue: Intervals\n"
+        "Wed: Easy run\n"
+        "Thu: Tempo\n"
+        "Fri: Rest\n"
+        "Sat: Long run\n"
+        "Sun: Recovery"
+    )
