@@ -1,98 +1,55 @@
-def generate_training_recommendation(
-    metrics,
-    readiness,
-    recovery_v4
-):
+# app/services/training_plan_service.py
 
-    weekly_distance = metrics.get(
-        "weekly_distance",
-        0
-    )
+from datetime import datetime
 
-    readiness_score = readiness.get(
-        "score",
-        0
-    )
 
-    recovery_score = recovery_v4.get(
-        "score",
-        0
-    )
+def generate_weekly_plan():
+    """
+    Simple Recovery Intelligence V5 training plan generator
+    """
 
-    run_count = metrics.get(
-        "run_count",
-        0
-    )
+    today = datetime.utcnow()
 
-    # --------------------------------------------------
-    # VERY LOW RECOVERY
-    # --------------------------------------------------
+    plan = {
+        "week_start": today.strftime("%Y-%m-%d"),
+        "goal": "Balanced endurance + recovery",
+        "sessions": [
+            {
+                "day": "Monday",
+                "type": "Recovery / Rest",
+                "intensity": "low"
+            },
+            {
+                "day": "Tuesday",
+                "type": "Easy run",
+                "intensity": "zone 2"
+            },
+            {
+                "day": "Wednesday",
+                "type": "Strength or rest",
+                "intensity": "moderate"
+            },
+            {
+                "day": "Thursday",
+                "type": "Tempo run",
+                "intensity": "threshold"
+            },
+            {
+                "day": "Friday",
+                "type": "Rest",
+                "intensity": "low"
+            },
+            {
+                "day": "Saturday",
+                "type": "Long run",
+                "intensity": "aerobic"
+            },
+            {
+                "day": "Sunday",
+                "type": "Recovery run",
+                "intensity": "very low"
+            }
+        ]
+    }
 
-    if readiness_score < 40:
-
-        return (
-            "Recovery focused day.\n\n"
-
-            "• 30-45 min walk\n"
-            "• Mobility work\n"
-            "• Hydration focus\n"
-            "• Prioritize sleep"
-        )
-
-    # --------------------------------------------------
-    # LOW RECOVERY
-    # --------------------------------------------------
-
-    if readiness_score < 60:
-
-        return (
-            "Easy aerobic session.\n\n"
-
-            "• 5-8 km zone 2\n"
-            "• Relaxed pace\n"
-            "• No intensity today\n"
-            "• Optional stretching"
-        )
-
-    # --------------------------------------------------
-    # BUILD BASE
-    # --------------------------------------------------
-
-    if weekly_distance < 20:
-
-        return (
-            "Aerobic base session.\n\n"
-
-            "• 8-12 km easy\n"
-            "• Comfortable effort\n"
-            "• Add 4 x strides\n"
-            "• Focus on consistency"
-        )
-
-    # --------------------------------------------------
-    # HIGH READINESS
-    # --------------------------------------------------
-
-    if recovery_score > 75:
-
-        return (
-            "Quality workout recommended.\n\n"
-
-            "• Tempo intervals\n"
-            "• Marathon pace blocks\n"
-            "• Strong aerobic effort\n"
-            "• Good day for progression"
-        )
-
-    # --------------------------------------------------
-    # DEFAULT
-    # --------------------------------------------------
-
-    return (
-        "Steady endurance training.\n\n"
-
-        "• Moderate aerobic run\n"
-        "• Controlled heart rate\n"
-        "• Maintain rhythm\n"
-        "• Recovery optimized"
-    )
+    return plan
