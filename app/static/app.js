@@ -1,57 +1,153 @@
 async function loadDashboard() {
 
-    const response = await fetch("/api/dashboard");
+    try {
 
-    const data = await response.json();
+        // --------------------------------------------------
+        // LIVE DASHBOARD DATA
+        // --------------------------------------------------
 
-    console.log(data);
+        const dashboardRes = await fetch("/api/dashboard");
+        const data = await dashboardRes.json();
 
-    // Recovery
-    document.getElementById("recovery-score").innerText =
-        data.recovery.score;
+        console.log("Dashboard:", data);
 
-    document.getElementById("recovery-status").innerText =
-        data.recovery.status;
+        if (!data) return;
 
-    // Fatigue
-    document.getElementById("fatigue-score").innerText =
-        data.fatigue.score;
+        // Safe UI updates (undgår null crash)
+        document.getElementById("recovery-score").innerText =
+            data.recovery?.score ?? "--";
 
-    document.getElementById("fatigue-status").innerText =
-        data.fatigue.status;
+        document.getElementById("recovery-status").innerText =
+            data.recovery?.status ?? "NO DATA";
 
-    // Metrics
-    document.getElementById("sleep-hours").innerText =
-        data.sleep_hours + " h";
+        document.getElementById("fatigue-score").innerText =
+            data.fatigue?.score ?? "--";
 
-    document.getElementById("hrv").innerText =
-        data.hrv;
+        document.getElementById("fatigue-status").innerText =
+            data.fatigue?.status ?? "NO DATA";
 
-    document.getElementById("body-battery").innerText =
-        data.body_battery;
+        document.getElementById("sleep-hours").innerText =
+            data.sleep_hours != null ? data.sleep_hours + " h" : "--";
 
-    document.getElementById("resting-hr").innerText =
-        data.resting_hr;
+        document.getElementById("hrv").innerText =
+            data.hrv ?? "--";
 
-    // Chart
+        document.getElementById("body-battery").innerText =
+            data.body_battery ?? "--";
 
-    const ctx = document.getElementById("recoveryChart");
+        document.getElementById("resting-hr").innerText =
+            data.resting_hr ?? "--";
 
-    new Chart(ctx, {
 
-        type: "line",
+        // --------------------------------------------------
+        // HISTORY DATA (STEP 3A)
+        // --------------------------------------------------
 
-        data: {
+        const historyRes = await fetch("/api/history");
+        const history = await historyRes.json();
 
-            labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        console.log("History:", history);
 
-            datasets: [{
-                label: "Recovery",
-
-                data: [62, 58, 70, 64, 55, 68, data.recovery.score]
-            }]
+        if (!Array.isArray(history) || history.length === 0) {
+            console.warn("No history data");
+            return;
         }
-    });
+
+        // --------------------------------------------------
+        // CHART DATA PREPARATION
+        // --------------------------------------------------
+
+        const labels = history.map(item =>
+            new Date(item.created_at).toLocaleDateString()
+        );
+
+        const recoveryData = history.map(item =>
+            item.recovery_score ?? null
+        );
+
+        const fatigueData = history.map(item =>
+            item.fatigue_score ?? null
+        );
+
+        const hrvData = history.map(item =>
+            item.hrv ?? null
+        );
+
+
+        // --------------------------------------------------
+        // CHART RENDER
+        // --------------------------------------------------
+
+        const ctx = document.getElementById("recoveryChart");
+
+        if (!ctx) return;
+
+        new Chart(ctx, {
+
+            type: "line",
+
+            data: {
+
+                labels: labels,
+
+                datasets: [
+
+                    {
+                        label: "Recovery Score",
+                        data: recoveryData,
+                        borderColor: "#4ade80",
+                        tension: 0.3
+                    },
+
+                    {
+                        label: "Fatigue Score",
+                        data: fatigueData,
+                        borderColor: "#f87171",
+                        tension: 0.3
+                    },
+
+                    {
+                        label: "HRV",
+                        data: hrvData,
+                        borderColor: "#60a5fa",
+                        tension: 0.3
+                    }
+                ]
+            },
+
+            options: {
+
+                responsive: true,
+
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: "white"
+                        }
+                    }
+                },
+
+                scales: {
+                    x: {
+                        ticks: {
+                            color: "white"
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            color: "white"
+                        }
+                    }
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error("Dashboard load error:", error);
+    }
 }
 
+
+// Auto refresh every 60 sec (optional but powerful)
 loadDashboard();
+setInterval(loadDashboard, 60000);
