@@ -1,205 +1,142 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import os
-import requests
-from datetime import datetime
+# ==================================================
+# MAIN.PY - MARATHON COACH AI (APP UI VERSION)
+# ==================================================
+
+from flask import Flask, request
+import logging
 
 from app.services.garmin_service import sync_garmin_health_to_supabase
-from app.services.recovery_engine import calculate_readiness_score
-from app.services.fatigue_engine import calculate_fatigue_score
 from app.services.training_plan_service import generate_weekly_plan
+from app.engines.recovery_engine import calculate_readiness_score
+from app.engines.fatigue_engine import calculate_fatigue_score
 
+app = Flask(__name__)
 
-app = FastAPI()
-
-
-# ==================================================
-# ROOT
-# ==================================================
-
-@app.get("/")
-def root():
-
-    return {
-        "status": "running",
-        "system": "Marathon Coach AI",
-        "version": "Recovery Intelligence V5"
-    }
+logging.basicConfig(level=logging.INFO)
 
 
 # ==================================================
-# HEALTH ENDPOINT (API)
+# UI FORMAT HELPERS
 # ==================================================
 
-@app.get("/health")
-def health():
+def card(title, subtitle="", lines=None):
+    lines = lines or []
 
-    return {
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    text = f"{title}\n"
+    if subtitle:
+        text += f"{subtitle}\n\n"
+
+    for l in lines:
+        text += f"{l}\n"
+
+    return text
 
 
-# ==================================================
-# GARMIN TEST
-# ==================================================
-
-@app.get("/garmin-test")
-def garmin_test():
-
-    data = sync_garmin_health_to_supabase()
-
-    recovery = calculate_readiness_score(
-        sleep_hours=data.get("sleep_hours"),
-        hrv=data.get("hrv"),
-        body_battery=data.get("body_battery"),
-        resting_hr=data.get("resting_hr"),
-        weight=data.get("weight"),
-    )
-
-    fatigue = calculate_fatigue_score(
-        sleep_hours=data.get("sleep_hours"),
-        hrv=data.get("hrv"),
-        body_battery=data.get("body_battery"),
-        resting_hr=data.get("resting_hr"),
-        weight=data.get("weight"),
-    )
-
-    return {
-        "status": "success",
-        "data": data,
-        "recovery": recovery,
-        "fatigue": fatigue
-    }
+def safe_data():
+    try:
+        return sync_garmin_health_to_supabase()
+    except Exception as e:
+        logging.error(e)
+        return {
+            "sleep_hours": None,
+            "hrv": None,
+            "body_battery": None,
+            "resting_hr": None,
+            "weight": None
+        }
 
 
 # ==================================================
-# WEEK / PLAN
+# CORE TELEGRAM HANDLER
 # ==================================================
 
-@app.get("/week")
-@app.get("/plan")
-def week_plan():
+def handle_command(cmd: str):
 
-    plan = generate_weekly_plan()
+    cmd = cmd.lower().strip()
 
-    return {
-        "status": "success",
-        "plan": plan
-    }
+    # --------------------------
+    # START / HELP
+    # --------------------------
 
+    if cmd in ["/start", "/help"]:
 
-# ==================================================
-# TELEGRAM WEBHOOK
-# ==================================================
-
-@app.post("/telegram")
-async def telegram(request: Request):
-
-    payload = await request.json()
-
-    message = payload.get("message", {})
-    text = message.get("text", "")
-    chat_id = message.get("chat", {}).get("id")
-
-    if not text or not chat_id:
-        return JSONResponse({"status": "ignored"})
-
-    response_text = handle_telegram_command(text)
-
-    send_telegram_message(chat_id, response_text)
-
-    return JSONResponse({"status": "ok"})
-
-
-# ==================================================
-# COMMAND ROUTER
-# ==================================================
-
-def handle_telegram_command(text: str):
-
-    cmd = text.strip().lower()
-
-    if "@" in cmd:
-        cmd = cmd.split("@")[0]
-
-    # --------------------------------------------------
-    # HELP
-    # --------------------------------------------------
-
-    if cmd in ["/help", "/start"]:
-
-        return (
-            "🏃 Marathon Coach AI V5\n\n"
-            "Commands:\n"
-            "/health\n"
-            "/status\n"
-            "/recovery\n"
-            "/fatigue\n"
-            "/week\n"
-            "/plan\n"
-            "/metrics"
+        return card(
+            "🏃 Marathon Coach AI",
+            "Dit er dit performance dashboard",
+            [
+                "/dashboard - oversigt",
+                "/recovery - restitution",
+                "/fatigue - træthed",
+                "/metrics - Garmin data",
+                "/plan - træningsplan",
+                "/health - system status"
+            ]
         )
 
-    # --------------------------------------------------
-    # HEALTH (FIXED + RESTORED)
-    # --------------------------------------------------
+    # --------------------------
+    # DASHBOARD (APP ENTRY)
+    # --------------------------
+
+    if cmd == "/dashboard":
+
+        data = safe_data()
+
+        return card(
+            "📱 Dashboard",
+            "Din aktuelle form",
+            [
+                f"Søvn: {data.get('sleep_hours')} t",
+                f"HRV: {data.get('hrv')}",
+                f"Body Battery: {data.get('body_battery')}",
+                "",
+                "Brug /recovery eller /fatigue"
+            ]
+        )
+
+    # --------------------------
+    # HEALTH
+    # --------------------------
 
     if cmd == "/health":
 
-        return (
-            "🩺 System Health\n\n"
-            "API: OK\n"
-            "Garmin Sync: ACTIVE\n"
-            "Recovery Engine: ACTIVE\n"
-            "Fatigue Engine: ACTIVE\n"
-            f"Timestamp: {datetime.utcnow().isoformat()}"
+        return card(
+            "🩺 System Health",
+            "Alle systemer kører",
+            [
+                "Garmin: OK",
+                "Recovery Engine: OK",
+                "Fatigue Engine: OK",
+                "Training Plans: OK"
+            ]
         )
 
-    # --------------------------------------------------
-    # STATUS
-    # --------------------------------------------------
-
-    if cmd == "/status":
-
-        return (
-            "🧠 System Status\n"
-            "Recovery Intelligence V5: ACTIVE\n"
-            "All systems operational"
-        )
-
-    # --------------------------------------------------
+    # --------------------------
     # METRICS
-    # --------------------------------------------------
+    # --------------------------
 
     if cmd == "/metrics":
 
-        data = sync_garmin_health_to_supabase()
+        data = safe_data()
 
-        return (
-            "📊 Garmin Metrics\n\n"
-            f"Sleep: {data.get('sleep_hours')}\n"
-            f"HRV: {data.get('hrv')}\n"
-            f"Body Battery: {data.get('body_battery')}\n"
-            f"Resting HR: {data.get('resting_hr')}\n"
-            f"Weight: {data.get('weight')}"
+        return card(
+            "📊 Garmin Metrics",
+            "Seneste data",
+            [
+                f"Søvn: {data.get('sleep_hours')}",
+                f"HRV: {data.get('hrv')}",
+                f"Body Battery: {data.get('body_battery')}",
+                f"RHR: {data.get('resting_hr')}",
+                f"Vægt: {data.get('weight')}"
+            ]
         )
 
-    # --------------------------------------------------
-    # WEEK / PLAN
-    # --------------------------------------------------
-
-    if cmd in ["/week", "/plan"]:
-
-        return f"📅 Training Plan\n\n{generate_weekly_plan()}"
-
-    # --------------------------------------------------
-    # RECOVERY
-    # --------------------------------------------------
+    # --------------------------
+    # RECOVERY ENGINE
+    # --------------------------
 
     if cmd == "/recovery":
 
-        data = sync_garmin_health_to_supabase()
+        data = safe_data()
 
         recovery = calculate_readiness_score(
             sleep_hours=data.get("sleep_hours"),
@@ -209,19 +146,24 @@ def handle_telegram_command(text: str):
             weight=data.get("weight"),
         )
 
-        return (
-            "🧠 Recovery\n\n"
-            f"Score: {recovery.get('score')}\n"
-            f"Status: {recovery.get('status')}"
+        return card(
+            "🧠 Recovery",
+            "Restitutionsanalyse",
+            [
+                f"Score: {recovery.get('score')} / 100",
+                f"Status: {recovery.get('status')}",
+                "",
+                "👉 Klar til træning vurderes her"
+            ]
         )
 
-    # --------------------------------------------------
-    # FATIGUE
-    # --------------------------------------------------
+    # --------------------------
+    # FATIGUE ENGINE
+    # --------------------------
 
     if cmd == "/fatigue":
 
-        data = sync_garmin_health_to_supabase()
+        data = safe_data()
 
         fatigue = calculate_fatigue_score(
             sleep_hours=data.get("sleep_hours"),
@@ -231,34 +173,115 @@ def handle_telegram_command(text: str):
             weight=data.get("weight"),
         )
 
-        return (
-            "⚡ Fatigue\n\n"
-            f"Score: {fatigue.get('fatigue_score')}\n"
-            f"Status: {fatigue.get('fatigue_status')}"
+        return card(
+            "⚡ Fatigue",
+            "Belastningsniveau",
+            [
+                f"Score: {fatigue.get('fatigue_score')} / 100",
+                f"Status: {fatigue.get('fatigue_status')}",
+                "",
+                "👉 Justér træning efter belastning"
+            ]
         )
 
-    return "❓ Unknown command. Try /help"
+    # --------------------------
+    # TRAINING PLAN
+    # --------------------------
+
+    if cmd == "/plan":
+
+        plan = generate_weekly_plan()
+
+        return card(
+            "📅 Training Plan",
+            "Ugens plan",
+            [
+                str(plan)[:300]
+            ]
+        )
+
+    # --------------------------
+    # DEFAULT
+    # --------------------------
+
+    return card(
+        "❓ Ukendt kommando",
+        "",
+        [
+            "Brug /help"
+        ]
+    )
+
+
+# ==================================================
+# TELEGRAM WEBHOOK
+# ==================================================
+
+@app.route("/telegram", methods=["POST"])
+def telegram_webhook():
+
+    try:
+        data = request.get_json()
+
+        message = data.get("message", {})
+        text = message.get("text", "")
+        chat_id = message.get("chat", {}).get("id")
+
+        if not text:
+            return "ok"
+
+        response = handle_command(text)
+
+        send_telegram_message(chat_id, response)
+
+        return "ok"
+
+    except Exception as e:
+        logging.error(e)
+        return "error"
 
 
 # ==================================================
 # TELEGRAM SENDER
 # ==================================================
 
+import requests
+import os
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+
 def send_telegram_message(chat_id, text):
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    if not token:
-        print("Missing TELEGRAM_BOT_TOKEN")
-        return
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        logging.error(e)
 
-    requests.post(
-        url,
-        json={
-            "chat_id": chat_id,
-            "text": text
-        },
-        timeout=10
-    )
+
+# ==================================================
+# HEALTH CHECK ENDPOINT
+# ==================================================
+
+@app.route("/health")
+def health():
+
+    return {
+        "status": "ok",
+        "service": "marathon-coach-ai"
+    }
+
+
+# ==================================================
+# ENTRYPOINT
+# ==================================================
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
