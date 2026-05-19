@@ -1,19 +1,14 @@
-from flask import Flask
+from flask import Flask, render_template
 from app.api.routes import api_bp
 
 app = Flask(__name__)
 
-# register API routes
 app.register_blueprint(api_bp, url_prefix="/api")
 
 
 @app.route("/")
-def home():
-    return {
-        "status": "ok",
-        "service": "marathon-coach-api",
-        "mode": "dashboard-ready"
-    }
+def dashboard():
+    return render_template("dashboard.html")
 
 
 if __name__ == "__main__":
