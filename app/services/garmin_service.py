@@ -59,6 +59,10 @@ def sync_garmin_health_to_supabase(supabase):
             .get("lastNightAvg")
         )
 
+        if hrv is not None:
+
+            hrv = int(hrv)
+
     except Exception as e:
 
         print("HRV ERROR:", e)
@@ -77,58 +81,57 @@ def sync_garmin_health_to_supabase(supabase):
 
         if isinstance(body_data, list) and len(body_data) > 0:
 
-            body_battery = body_data[-1].get("charged")
+            latest = body_data[-1]
+
+            body_battery = latest.get("charged")
+
+            if body_battery is not None:
+
+                body_battery = int(body_battery)
 
     except Exception as e:
 
         print("BODY BATTERY ERROR:", e)
 
     # --------------------------------------------------
-    # RESTING HEART RATE (FIXED)
+    # RESTING HEART RATE
     # --------------------------------------------------
 
     resting_hr = None
 
     try:
 
-        rhr_data = client.get_rhr_day_values(today.isoformat())
+        summary = client.get_stats(today.isoformat())
 
-        print("RHR RAW:", rhr_data)
+        print("SUMMARY RAW:", summary)
 
-        metrics = (
-            rhr_data
-            .get("allMetrics", {})
-            .get("metricsMap", {})
-            .get("WELLNESS_RESTING_HEART_RATE", [])
-        )
+        resting_hr = summary.get("restingHeartRate")
 
-        if metrics:
+        if resting_hr is not None:
 
-            resting_hr = metrics[-1].get("value")
+            resting_hr = int(resting_hr)
 
     except Exception as e:
 
         print("RHR ERROR:", e)
 
     # --------------------------------------------------
-    # WEIGHT (ROBUST + FALLBACK)
+    # WEIGHT
     # --------------------------------------------------
 
     weight = None
 
-    # PRIMARY SOURCE
     try:
 
         weight_data = client.get_body_composition(today.isoformat())
 
         print("WEIGHT RAW:", weight_data)
 
-        if (
-            isinstance(weight_data, list)
-            and len(weight_data) > 0
-        ):
+        date_weight_list = weight_data.get("dateWeightList", [])
 
-            latest = weight_data[-1]
+        if len(date_weight_list) > 0:
+
+            latest = date_weight_list[-1]
 
             raw_weight = latest.get("weight")
 
@@ -138,44 +141,28 @@ def sync_garmin_health_to_supabase(supabase):
 
     except Exception as e:
 
-        print("WEIGHT PRIMARY ERROR:", e)
-
-    # FALLBACK SOURCE (PROFILE)
-    if weight is None:
-
-        try:
-
-            profile = client.get_user_summary()
-
-            print("PROFILE RAW:", profile)
-
-            fallback_weight = profile.get("weight")
-
-            if fallback_weight:
-
-                weight = round(float(fallback_weight), 1)
-
-        except Exception as e:
-
-            print("WEIGHT FALLBACK ERROR:", e)
+        print("WEIGHT ERROR:", e)
 
     # --------------------------------------------------
-    # UPSERT SUPABASE
+    # SAVE TO SUPABASE
     # --------------------------------------------------
 
     try:
 
-        supabase.table("health_metrics").upsert({
+        payload = {
 
             "date": today.isoformat(),
-
             "sleep_hours": sleep_hours,
             "hrv": hrv,
             "body_battery": body_battery,
             "resting_hr": resting_hr,
             "weight": weight
 
-        }).execute()
+        }
+
+        print("SUPABASE PAYLOAD:", payload)
+
+        supabase.table("health_metrics").upsert(payload).execute()
 
         print("✅ GARMIN SYNC COMPLETE")
 
@@ -184,7 +171,7 @@ def sync_garmin_health_to_supabase(supabase):
         print("SUPABASE ERROR:", e)
 
     # --------------------------------------------------
-    # RETURN FOR TESTING
+    # RETURN TEST DATA
     # --------------------------------------------------
 
     return {
