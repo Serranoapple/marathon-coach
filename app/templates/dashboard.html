@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Marathon Coach</title>
+
+    <link rel="stylesheet" href="/static/style.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🏃 Marathon Coach</h1>
+
+    <div class="grid">
+
+        <div class="card">
+            <h2>Recovery</h2>
+            <div id="recovery-score" class="score">--</div>
+            <div id="recovery-status">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>Fatigue</h2>
+            <div id="fatigue-score" class="score">--</div>
+            <div id="fatigue-status">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>Sleep</h2>
+            <div id="sleep-hours" class="metric">--</div>
+        </div>
+
+        <div class="card">
+            <h2>HRV</h2>
+            <div id="hrv" class="metric">--</div>
+        </div>
+
+        <div class="card">
+            <h2>Body Battery</h2>
+            <div id="body-battery" class="metric">--</div>
+        </div>
+
+        <div class="card">
+            <h2>Resting HR</h2>
+            <div id="resting-hr" class="metric">--</div>
+        </div>
+
+    </div>
+
+    <div class="chart-card">
+
+        <h2>Recovery Trend</h2>
+
+        <canvas id="recoveryChart"></canvas>
+
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>
