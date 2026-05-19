@@ -1,236 +1,173 @@
-import traceback
 from garminconnect import Garmin
+from datetime import datetime
+import os
 
 
-# -----------------------------------
-# LOGIN / CLIENT (forventes allerede init i dit flow)
-# -----------------------------------
+def sync_garmin_health_to_supabase(supabase):
 
-def get_garmin_client(username, password):
+    print("STARTING GARMIN SYNC")
 
-    try:
+    email = os.getenv("GARMIN_EMAIL")
+    password = os.getenv("GARMIN_PASSWORD")
 
-        client = Garmin(username, password)
-        client.login()
-        return client
+    client = Garmin(email, password)
+    client.login()
 
-    except Exception as e:
+    today = datetime.utcnow().date()
 
-        print("GARMIN LOGIN ERROR:", e)
-        return None
+    # --------------------------------------------------
+    # SLEEP
+    # --------------------------------------------------
 
-
-# -----------------------------------
-# SLEEP
-# -----------------------------------
-
-def get_sleep_data(client):
+    sleep_hours = None
 
     try:
 
-        data = client.get_sleep_data()
-
-        daily = data.get("dailySleepDTO", {})
-
-        sleep_seconds = daily.get("sleepTimeSeconds", 0)
-
-        sleep_hours = round(
-            sleep_seconds / 3600,
-            2
+        sleep_data = client.get_sleep_data(
+            today.isoformat()
         )
 
-        return sleep_hours
+        print("SLEEP RAW:", sleep_data)
+
+        sleep_ms = (
+            sleep_data
+            .get("dailySleepDTO", {})
+            .get("sleepTimeSeconds")
+        )
+
+        if sleep_ms:
+
+            sleep_hours = round(
+                sleep_ms / 3600,
+                2
+            )
 
     except Exception as e:
 
         print("SLEEP ERROR:", e)
-        return None
 
+    # --------------------------------------------------
+    # HRV
+    # --------------------------------------------------
 
-# -----------------------------------
-# HRV
-# -----------------------------------
-
-def get_hrv(client):
+    hrv = None
 
     try:
 
-        data = client.get_hrv_data()
+        hrv_data = client.get_hrv_data(
+            today.isoformat()
+        )
 
-        summary = data.get("hrvSummary", {})
+        print("HRV RAW:", hrv_data)
 
-        return summary.get("lastNightAvg")
+        hrv = (
+            hrv_data
+            .get("hrvSummary", {})
+            .get("lastNightAvg")
+        )
 
     except Exception as e:
 
         print("HRV ERROR:", e)
-        return None
 
+    # --------------------------------------------------
+    # BODY BATTERY
+    # --------------------------------------------------
 
-# -----------------------------------
-# RESTING HEART RATE
-# -----------------------------------
-
-def get_resting_hr(client):
+    body_battery = None
 
     try:
 
-        data = client.get_rhr_data()
-
-        metrics = (
-            data.get("allMetrics", {})
-            .get("metricsMap", {})
-            .get("WELLNESS_RESTING_HEART_RATE", [])
+        body_data = client.get_body_battery(
+            today.isoformat()
         )
 
-        if not metrics:
+        print("BODY RAW:", body_data)
 
-            return None
+        if isinstance(body_data, list) and len(body_data) > 0:
 
-        return metrics[0].get("value")
+            latest = body_data[-1]
 
-    except Exception as e:
-
-        print("RHR ERROR:", e)
-        return None
-
-
-# -----------------------------------
-# BODY BATTERY
-# -----------------------------------
-
-def get_body_battery(client):
-
-    try:
-
-        data = client.get_body_battery()
-
-        values = data.get("bodyBatteryValuesArray", [])
-
-        if not values:
-
-            return None
-
-        return values[-1][1]
+            body_battery = latest.get("charged")
 
     except Exception as e:
 
         print("BODY BATTERY ERROR:", e)
-        return None
 
+    # --------------------------------------------------
+    # RESTING HEART RATE
+    # --------------------------------------------------
 
-# -----------------------------------
-# WEIGHT (ROBUST MULTI-FALLBACK)
-# -----------------------------------
-
-def get_weight(client):
+    resting_hr = None
 
     try:
 
-        # 1. Body composition endpoint
-        try:
+        rhr_data = client.get_rhr_day_values(
+            today.isoformat()
+        )
 
-            data = client.get_body_composition()
+        print("RHR RAW:", rhr_data)
 
-            measurements = (
-                data.get("measurementValues")
-                or data.get("measurements")
-                or []
-            )
+        metrics = (
+            rhr_data
+            .get("allMetrics", {})
+            .get("metricsMap", {})
+            .get("WELLNESS_RESTING_HEART_RATE", [])
+        )
 
-            if measurements:
+        if metrics:
 
-                latest = measurements[-1]
+            resting_hr = metrics[-1].get("value")
 
-                weight = (
-                    latest.get("weight")
-                    or latest.get("value")
+    except Exception as e:
+
+        print("RHR ERROR:", e)
+
+    # --------------------------------------------------
+    # WEIGHT (FIXED)
+    # --------------------------------------------------
+
+    weight = None
+
+    try:
+
+        weight_data = client.get_body_composition(
+            today.isoformat()
+        )
+
+        print("WEIGHT RAW:", weight_data)
+
+        if (
+            weight_data
+            and isinstance(weight_data, list)
+            and len(weight_data) > 0
+        ):
+
+            latest = weight_data[-1]
+
+            raw_weight = latest.get("weight")
+
+            if raw_weight is not None:
+
+                # Garmin returns grams → kg
+                weight = round(
+                    raw_weight / 1000,
+                    1
                 )
-
-                if weight:
-
-                    weight = float(weight)
-
-                    # grams fallback
-                    if weight > 300:
-                        weight = weight / 1000
-
-                    return round(weight, 1)
-
-        except Exception as e:
-
-            print("WEIGHT METHOD 1 FAILED:", e)
-
-        # 2. fallback user summary
-        try:
-
-            data = client.get_user_summary()
-
-            weight = data.get("weight")
-
-            if weight:
-
-                weight = float(weight)
-
-                return round(weight, 1)
-
-        except Exception as e:
-
-            print("WEIGHT METHOD 2 FAILED:", e)
-
-        return None
 
     except Exception as e:
 
         print("WEIGHT ERROR:", e)
-        return None
 
-
-# -----------------------------------
-# MAIN SYNC FUNCTION
-# -----------------------------------
-
-def sync_garmin_health_to_supabase(supabase):
+    # --------------------------------------------------
+    # UPSERT SUPABASE
+    # --------------------------------------------------
 
     try:
 
-        username = supabase.table(
-            "settings"
-        ).select("*").eq(
-            "key",
-            "garmin_username"
-        ).execute().data[0]["value"]
+        supabase.table("health_metrics").upsert({
 
-        password = supabase.table(
-            "settings"
-        ).select("*").eq(
-            "key",
-            "garmin_password"
-        ).execute().data[0]["value"]
-
-        client = get_garmin_client(
-            username,
-            password
-        )
-
-        if not client:
-
-            return {}
-
-        sleep_hours = get_sleep_data(client)
-        hrv = get_hrv(client)
-        body_battery = get_body_battery(client)
-        resting_hr = get_resting_hr(client)
-        weight = get_weight(client)
-
-        print("GARMIN RAW DEBUG:")
-        print("sleep:", sleep_hours)
-        print("hrv:", hrv)
-        print("body_battery:", body_battery)
-        print("rhr:", resting_hr)
-        print("weight:", weight)
-
-        return {
+            "date": today.isoformat(),
 
             "sleep_hours": sleep_hours,
             "hrv": hrv,
@@ -238,11 +175,23 @@ def sync_garmin_health_to_supabase(supabase):
             "resting_hr": resting_hr,
             "weight": weight
 
-        }
+        }).execute()
+
+        print("GARMIN SYNC COMPLETE")
 
     except Exception as e:
 
-        print("SYNC ERROR:", e)
-        traceback.print_exc()
+        print("SUPABASE ERROR:", e)
 
-        return {}
+    # --------------------------------------------------
+    # RETURN FOR TESTING
+    # --------------------------------------------------
+
+    return {
+
+        "sleep_hours": sleep_hours,
+        "hrv": hrv,
+        "body_battery": body_battery,
+        "resting_hr": resting_hr,
+        "weight": weight
+    }
